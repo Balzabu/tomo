@@ -1,0 +1,4 @@
+{
+  "NSCameraUsageDescription": "Tomo usa la cámara para escanear el código de barras (ISBN) de los libros.",
+  "NSPhotoLibraryUsageDescription": "Tomo accede a tus fotos para que puedas elegir la portada de un libro."
+}

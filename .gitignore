@@ -1,0 +1,51 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build outputs
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/.cxx/
+android/app/.cxx/
+android/local.properties
+ios/build/
+ios/Pods/
+*.orig.*
+
+# Signing keys and credentials - never commit
+keystore.properties
+*.keystore
+!android/app/debug.keystore
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Release binaries - published via GitHub Releases
+*.apk
+*.aab
+
+# Metro
+.metro-health-check*
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# Local env
+.env*.local
+
+# TypeScript
+*.tsbuildinfo

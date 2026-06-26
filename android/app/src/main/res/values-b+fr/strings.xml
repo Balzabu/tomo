@@ -1,0 +1,4 @@
+<resources>
+  <string name="NSCameraUsageDescription">"Tomo utilise l'appareil photo pour scanner le code-barres (ISBN) des livres."</string>
+  <string name="NSPhotoLibraryUsageDescription">"Tomo accède à tes photos pour que tu puisses choisir une couverture de livre."</string>
+</resources>

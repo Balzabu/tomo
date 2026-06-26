@@ -1,0 +1,10 @@
+<resources>
+  <string name="app_name">Tomo</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
+  <string name="widget_currentlyreading_description" translatable="false">The book you\'re reading, with progress and stats</string>
+  <string name="widget_quickstart_description" translatable="false">Start a reading session by picking a book</string>
+  <string name="widget_streakgoal_description" translatable="false">Your day streak and today\'s goal</string>
+  <string name="widget_heatmap_description" translatable="false">Your reading calendar</string>
+</resources>
