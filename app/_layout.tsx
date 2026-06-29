@@ -12,6 +12,7 @@ import {
 } from '@react-navigation/native';
 import * as SystemUI from 'expo-system-ui';
 import { useStore } from '@/store/useStore';
+import { useActiveSession } from '@/store/useActiveSession';
 import { useSettings } from '@/store/useSettings';
 import { useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -20,6 +21,7 @@ import { setGoogleApiKey } from '@/services/bookApi';
 import { scheduleDailyReminder } from '@/lib/notifications';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Snackbar } from '@/components/Snackbar';
+import { ActiveSessionWatcher } from '@/components/ActiveSessionWatcher';
 
 // Anchor deep links (e.g. the widgets' tomo:///timer/<id>) to the tab group so
 // a cold start always has the app underneath - otherwise router.back() after
@@ -33,6 +35,7 @@ export default function RootLayout() {
   const { t: tr } = useTranslation();
   const hydrate = useStore((s) => s.hydrate);
   const hydrated = useStore((s) => s.hydrated);
+  const hydrateActiveSession = useActiveSession((s) => s.hydrate);
   const hydrateSettings = useSettings((s) => s.hydrate);
   const settingsHydrated = useSettings((s) => s.hydrated);
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
@@ -42,8 +45,9 @@ export default function RootLayout() {
   useEffect(() => {
     void hydrate();
     void hydrateSettings();
+    void hydrateActiveSession();
     void loadGoogleApiKey().then(setGoogleApiKey);
-  }, [hydrate, hydrateSettings]);
+  }, [hydrate, hydrateSettings, hydrateActiveSession]);
 
   // Re-arm the daily reading reminder on launch (survives reboots / locale change).
   useEffect(() => {
@@ -115,6 +119,7 @@ export default function RootLayout() {
           )}
           </ErrorBoundary>
           <Snackbar />
+          {hydrated && settingsHydrated ? <ActiveSessionWatcher /> : null}
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

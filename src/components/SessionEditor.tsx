@@ -20,13 +20,25 @@ interface Props {
   /** existing session to edit, or null to add a new one */
   session?: ReadingSession | null;
   defaultStartPage?: number;
+  /** prefill the minutes field when adding (ignored when editing a session) */
+  defaultMinutes?: number;
+  /** override the dialog title (defaults to add/edit) */
+  title?: string;
   onClose: () => void;
   onSave: (draft: SessionDraft) => void;
 }
 
 const DAY = 86_400_000;
 
-export function SessionEditor({ visible, session, defaultStartPage, onClose, onSave }: Props) {
+export function SessionEditor({
+  visible,
+  session,
+  defaultStartPage,
+  defaultMinutes,
+  title,
+  onClose,
+  onSave,
+}: Props) {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
   const c = t.colors;
@@ -48,12 +60,12 @@ export function SessionEditor({ visible, session, defaultStartPage, onClose, onS
     } else {
       setStartPage(defaultStartPage != null ? String(defaultStartPage) : '');
       setEndPage('');
-      setMinutes('');
+      setMinutes(defaultMinutes != null ? String(defaultMinutes) : '');
       const d = new Date();
       d.setHours(0, 0, 0, 0);
       setDayTs(d.getTime());
     }
-  }, [visible, session, defaultStartPage]);
+  }, [visible, session, defaultStartPage, defaultMinutes]);
 
   const mins = parseInt(minutes, 10);
   const canSave = Number.isFinite(mins) && mins > 0;
@@ -78,7 +90,7 @@ export function SessionEditor({ visible, session, defaultStartPage, onClose, onS
     <Dialog
       visible={visible}
       onClose={onClose}
-      title={session ? tr('session.edit') : tr('session.add')}
+      title={title ?? (session ? tr('session.edit') : tr('session.add'))}
     >
       <View style={styles.dateRow}>
         <Pressable onPress={() => setDayTs((d) => d - DAY)} hitSlop={8}>

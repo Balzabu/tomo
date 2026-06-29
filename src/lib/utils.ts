@@ -44,4 +44,10 @@ export function formatClock(seconds: number): string {
   return `${mm}:${ss}`;
 }
 
+/** Local time of day as HH:MM (24h) for a timestamp. */
+export function formatTimeOfDay(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 // Date display formatting lives in src/i18n (it must be language-aware).
