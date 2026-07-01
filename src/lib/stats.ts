@@ -204,6 +204,7 @@ export function computeInsights(books: Book[], sessions: ReadingSession[]): Insi
   }
   let fastestBook: Insights['fastestBook'];
   for (const b of books) {
+    if (b.status !== 'finished') continue;
     const e = byBook.get(b.id);
     if (!e || e.seconds < 1800 || e.pages < 20) continue;
     const pph = e.pages / (e.seconds / 3600);

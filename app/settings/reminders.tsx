@@ -29,13 +29,19 @@ export default function RemindersSettings() {
 
   const applyReminder = async (enabled: boolean, h: number, m: number) => {
     if (enabled) {
-      const ok = await requestNotificationPermission();
+      const ok = await requestNotificationPermission(tr('notif.channelReminders'));
       if (!ok) {
         Alert.alert(tr('settings.reminders'), tr('settings.reminderPermDenied'));
         setReminder(false, h, m);
         return;
       }
-      const scheduled = await scheduleDailyReminder(h, m, tr('notif.title'), tr('notif.body'));
+      const scheduled = await scheduleDailyReminder(
+        h,
+        m,
+        tr('notif.title'),
+        tr('notif.body'),
+        tr('notif.channelReminders')
+      );
       if (!scheduled) {
         Alert.alert(tr('settings.reminders'), tr('settings.reminderPermDenied'));
         setReminder(false, h, m);

@@ -184,7 +184,7 @@ interface GEntry {
   dc$date?: GText[];
   dc$format?: GText[];
   dc$identifier?: GText[];
-  dc$description?: GText;
+  dc$description?: GText[];
   dc$publisher?: GText[];
   dc$language?: GText[];
 }
@@ -209,7 +209,12 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
   const pageStr = formats.find((f) => /pages?/i.test(f));
   const pageCount = pageStr ? parseInt(pageStr, 10) || undefined : undefined;
 
-  const thumb = e.link?.find((l) => l.rel?.includes('thumbnail'))?.href;
+  // Strip the page-curl overlay Google bakes into some feed thumbnails
+  // (edge=curl) and normalise to the standard zoom=1 thumbnail.
+  const thumb = e.link
+    ?.find((l) => l.rel?.includes('thumbnail'))
+    ?.href?.replace(/([?&])zoom=\d+/, '$1zoom=1')
+    .replace(/&edge=curl/, '');
 
   return {
     title,
@@ -217,7 +222,7 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
     coverUrl: httpsCover(thumb) ?? olCoverFromIsbn(isbn),
     isbn,
     pageCount,
-    description: e.dc$description?.$t || undefined,
+    description: e.dc$description?.[0]?.$t || undefined,
     publisher: e.dc$publisher?.[0]?.$t,
     publishedDate: e.dc$date?.[0]?.$t,
     language: e.dc$language?.[0]?.$t,

@@ -16,8 +16,13 @@ const SUPPORTED: Lang[] = ['it', 'en', 'es', 'fr', 'de', 'pt'];
 
 function deviceLang(): Lang {
   try {
-    const code = getLocales()[0]?.languageCode ?? 'en';
-    return SUPPORTED.includes(code as Lang) ? (code as Lang) : 'en';
+    // Honour the whole preference list, not just the first entry: a device set
+    // to e.g. [nl-NL, it-IT] should get Italian, not the English fallback.
+    for (const locale of getLocales()) {
+      const code = locale.languageCode;
+      if (code && SUPPORTED.includes(code as Lang)) return code as Lang;
+    }
+    return 'en';
   } catch {
     return 'en';
   }

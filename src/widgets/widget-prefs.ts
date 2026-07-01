@@ -40,3 +40,11 @@ export async function setReadingSelection(widgetId: number, bookId: string): Pro
   map[String(widgetId)] = bookId;
   await writeMap(map);
 }
+
+/** Drop the selection of a removed widget instance so the map doesn't grow forever. */
+export async function removeReadingSelection(widgetId: number): Promise<void> {
+  const map = await readMap();
+  if (!(String(widgetId) in map)) return;
+  delete map[String(widgetId)];
+  await writeMap(map);
+}

@@ -23,16 +23,16 @@ export function CoverPicker({ coverUrl, title, onChange }: Props) {
     setBusy(true);
     try {
       const res = await pickCover();
-      if (res.status === 'denied') {
-        Alert.alert(tr('cover.permTitle'), tr('cover.permMsg'));
-        return;
-      }
       if (res.status === 'ok') {
         void Haptics.selectionAsync();
         // Don't delete the previous file here - the user might still cancel the
         // form. The parent screen deletes the replaced cover only on save().
         onChange(res.uri);
       }
+    } catch (e) {
+      // e.g. copying the picked file failed (storage full) - tell the user
+      // instead of leaving an unhandled rejection.
+      Alert.alert(tr('common.error'), String(e));
     } finally {
       setBusy(false);
     }

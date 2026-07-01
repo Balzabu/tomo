@@ -12,7 +12,11 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useBook, useStore } from '@/store/useStore';
-import { useActiveSession, sessionElapsed } from '@/store/useActiveSession';
+import {
+  useActiveSession,
+  sessionElapsed,
+  sessionElapsedAtLastTick,
+} from '@/store/useActiveSession';
 import { onColor, radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
@@ -65,9 +69,11 @@ export default function TimerScreen() {
   const [endPage, setEndPage] = useState(String(book?.currentPage ?? 0));
 
   // Bootstrap the session once: adopt an existing one for this book, or start a
-  // fresh one (and post the ongoing notification).
+  // fresh one (and post the ongoing notification). A stale deep link (widget or
+  // notification pointing at a deleted book) must not start a ghost session, so
+  // nothing happens until the book resolves.
   useEffect(() => {
-    if (initRef.current) return;
+    if (initRef.current || !book) return;
     initRef.current = true;
     const s = useActiveSession.getState();
     const a = s.active;
@@ -77,23 +83,49 @@ export default function TimerScreen() {
       else s.resume(); // continue an existing session
       return;
     }
-    if (a) s.clear(); // stray session for another book - drop it
+    if (a) {
+      // A session for another book (e.g. this timer was opened from a widget
+      // while one was running). Dropping it silently can destroy real reading
+      // time, so bank anything meaningful as a session first - capped at its
+      // last heartbeat, the same way the recovery flow measures it.
+      const secs = sessionElapsedAtLastTick(a);
+      const strayExists = useStore.getState().books.some((b) => b.id === a.bookId);
+      if (strayExists && secs >= 60) {
+        addSession({
+          bookId: a.bookId,
+          startTime: a.startedAt,
+          endTime: a.startedAt + secs * 1000,
+          durationSeconds: secs,
+          pagesRead: 0,
+        });
+      }
+      s.clear();
+    }
     s.start(bookId);
     void (async () => {
-      const granted = await requestNotificationPermission();
+      const granted = await requestNotificationPermission(tr('notif.channelReminders'));
       if (!granted) return;
       const startedAt = useActiveSession.getState().active?.startedAt ?? Date.now();
       const id = await showSessionNotification(
         {
-          title: tr('timer.notifTitle', { title: book?.title ?? '' }),
+          title: tr('timer.notifTitle', { title: book.title }),
           body: tr('timer.notifBody', { time: formatTimeOfDay(startedAt) }),
           finishLabel: tr('timer.notifFinish'),
+          channelName: tr('notif.channelSession'),
         },
         bookId
       );
-      if (id) useActiveSession.getState().setNotificationId(id);
+      if (!id) return;
+      // The session may have been discarded (or replaced) while the permission
+      // prompt / notification post was in flight - dismiss the notification
+      // right away instead of orphaning it in the shade.
+      if (useActiveSession.getState().active?.bookId !== bookId) {
+        void dismissSessionNotification(id);
+        return;
+      }
+      useActiveSession.getState().setNotificationId(id);
     })();
-  }, [bookId, finish, book?.title, tr]);
+  }, [bookId, finish, book, tr]);
 
   // A "Finish" tap on the notification while the timer is already mounted: jump
   // to the finish screen instead of stacking a second timer.
@@ -127,10 +159,19 @@ export default function TimerScreen() {
     return () => sub.remove();
   }, []);
 
-  // Guard hardware back / swipe-back while a session is in progress.
+  // Guard hardware back / swipe-back while a session is in progress. Only a
+  // session this screen owns is guarded (a stray one for another book is the
+  // recovery flow's business, not ours).
   useEffect(() => {
     const sub = (navigation as any).addListener('beforeRemove', (e: any) => {
-      if (allowLeaveRef.current || elapsedRef.current <= 0) return;
+      if (allowLeaveRef.current) return;
+      if (useActiveSession.getState().active?.bookId !== bookId) return;
+      if (elapsedRef.current <= 0) {
+        // Nothing timed yet (backed out within the first second): drop the
+        // just-started session instead of leaving it running forever.
+        discard();
+        return;
+      }
       e.preventDefault();
       Alert.alert(tr('timer.cancelTitle'), tr('timer.cancelMsg'), [
         { text: tr('timer.keepReading'), style: 'cancel' },
@@ -146,7 +187,7 @@ export default function TimerScreen() {
       ]);
     });
     return sub;
-  }, [navigation, tr]);
+  }, [navigation, tr, bookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!book) {
     return (
@@ -184,8 +225,8 @@ export default function TimerScreen() {
     const startedAt = a?.startedAt ?? Date.now() - elapsed * 1000;
     const sp = parseInt(startPage, 10);
     const ep = parseInt(endPage, 10);
-    const validStart = Number.isFinite(sp) ? sp : undefined;
-    const validEnd = Number.isFinite(ep) ? ep : undefined;
+    const validStart = Number.isFinite(sp) && sp >= 0 ? sp : undefined;
+    const validEnd = Number.isFinite(ep) && ep >= 0 ? ep : undefined;
     const pagesRead =
       validStart != null && validEnd != null ? Math.max(0, validEnd - validStart) : 0;
 

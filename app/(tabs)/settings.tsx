@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useStore } from '@/store/useStore';
 import { useSettings } from '@/store/useSettings';
+import { useActiveSession } from '@/store/useActiveSession';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { APP_NAME } from '@/lib/constants';
@@ -36,7 +37,15 @@ export default function SettingsScreen() {
         onPress: async () => {
           await clearData();
           await clearCovers();
-          await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 });
+          // Drop any in-progress reading session too (and its ongoing
+          // notification) so the next launch doesn't offer to "recover" a
+          // session for a book that no longer exists.
+          useActiveSession.getState().clear();
+          // Storage was already wiped above, so a failed write of the empty
+          // snapshot changes nothing - don't let it reject unhandled.
+          await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 }).catch(
+            () => {}
+          );
         },
       },
     ]);

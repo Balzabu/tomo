@@ -11,6 +11,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// The previous capture is deleted on the *next* share rather than as soon as
+// the share sheet resolves: on Android the receiving app may still be reading
+// the URI at that point, and an immediate delete hands it a missing file.
+let lastCaptureUri: string | undefined;
+
 /**
  * Capture a view as a PNG and open the share sheet. Returns a result code so
  * the caller can show an error instead of failing silently.
@@ -19,9 +24,12 @@ export async function shareViewAsImage(
   ref: RefObject<View | null>,
   opts: { dialogTitle?: string; preloadUrls?: (string | undefined)[] } = {}
 ): Promise<ShareImageResult> {
-  let uri: string | undefined;
   try {
     if (!ref.current) return 'failed';
+    if (lastCaptureUri) {
+      void FileSystem.deleteAsync(lastCaptureUri, { idempotent: true }).catch(() => {});
+      lastCaptureUri = undefined;
+    }
 
     // Warm the image cache for any remote covers so they're painted in time.
     const remote = (opts.preloadUrls ?? []).filter(
@@ -35,7 +43,8 @@ export async function shareViewAsImage(
 
     if (!(await Sharing.isAvailableAsync())) return 'unavailable';
 
-    uri = await captureRef(ref, { format: 'png', quality: 1 });
+    const uri = await captureRef(ref, { format: 'png', quality: 1 });
+    lastCaptureUri = uri;
     await Sharing.shareAsync(uri, {
       mimeType: 'image/png',
       dialogTitle: opts.dialogTitle ?? 'Tomo',
@@ -44,9 +53,5 @@ export async function shareViewAsImage(
     return 'shared';
   } catch {
     return 'failed';
-  } finally {
-    // captureRef writes a temp PNG to the cache; remove it so shares don't
-    // accumulate files over time.
-    if (uri) void FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
   }
 }

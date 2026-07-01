@@ -205,6 +205,7 @@ export default function LibraryScreen() {
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         windowSize={11}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
         ListHeaderComponent={
           <View style={{ gap: spacing.lg, marginBottom: spacing.md }}>

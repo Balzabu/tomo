@@ -32,11 +32,19 @@ export async function loadData(): Promise<AppData> {
   }
 }
 
-export async function saveData(data: AppData): Promise<void> {
+// Surfaced to the UI when a write fails (storage full, AsyncStorage limit):
+// swallowing it would let the app look fine in memory while every change
+// silently evaporates on the next restart.
+export const PERSIST_FAILED = 'PERSIST_FAILED';
+
+/** Returns whether the write succeeded - callers decide how loudly to fail. */
+export async function saveData(data: AppData): Promise<boolean> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch (e) {
     console.warn('Failed to persist data', e);
+    return false;
   }
 }
 

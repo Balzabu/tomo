@@ -65,7 +65,13 @@ export default function RootLayout() {
         useSettings.getState().setReminder(false, reminderHour, reminderMinute);
         return;
       }
-      await scheduleDailyReminder(reminderHour, reminderMinute, tr('notif.title'), tr('notif.body'));
+      await scheduleDailyReminder(
+        reminderHour,
+        reminderMinute,
+        tr('notif.title'),
+        tr('notif.body'),
+        tr('notif.channelReminders')
+      );
     })();
   }, [settingsHydrated, reminderEnabled, reminderHour, reminderMinute, tr]);
 

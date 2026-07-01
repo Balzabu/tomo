@@ -20,18 +20,22 @@ Notifications.setNotificationHandler({
   },
 });
 
-async function ensureAndroidChannel(): Promise<void> {
+// Channel names show up in the system notification settings, so they are
+// passed in already-translated like every other string in this module. Android
+// updates an existing channel's name on re-registration, so a language switch
+// propagates the next time a notification is scheduled.
+async function ensureAndroidChannel(name: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: 'Reading reminders',
+    name,
     importance: Notifications.AndroidImportance.DEFAULT,
   });
 }
 
 /** Ask for notification permission (Android 13+ needs a channel first). */
-export async function requestNotificationPermission(): Promise<boolean> {
+export async function requestNotificationPermission(channelName: string): Promise<boolean> {
   try {
-    await ensureAndroidChannel();
+    await ensureAndroidChannel(channelName);
     const current = await Notifications.getPermissionsAsync();
     if (current.granted) return true;
     const req = await Notifications.requestPermissionsAsync();
@@ -60,10 +64,11 @@ export async function scheduleDailyReminder(
   hour: number,
   minute: number,
   title: string,
-  body: string
+  body: string,
+  channelName: string
 ): Promise<boolean> {
   try {
-    await ensureAndroidChannel();
+    await ensureAndroidChannel(channelName);
     await cancelReminders();
     await Notifications.scheduleNotificationAsync({
       content: { title, body },
@@ -91,10 +96,10 @@ export async function cancelReminders(): Promise<void> {
 
 // --- Reading-session ongoing notification --------------------------------
 
-async function ensureSessionChannel(): Promise<void> {
+async function ensureSessionChannel(name: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(SESSION_CHANNEL_ID, {
-    name: 'Reading session',
+    name,
     // LOW: shows in the shade but never makes a sound or heads-up banner.
     importance: Notifications.AndroidImportance.LOW,
   });
@@ -105,6 +110,8 @@ export interface SessionNotificationText {
   body: string;
   /** label of the "Finish" action button */
   finishLabel: string;
+  /** name of the Android notification channel (visible in system settings) */
+  channelName: string;
 }
 
 /**
@@ -118,7 +125,7 @@ export async function showSessionNotification(
   bookId: string
 ): Promise<string | undefined> {
   try {
-    await ensureSessionChannel();
+    await ensureSessionChannel(text.channelName);
     await Notifications.setNotificationCategoryAsync(SESSION_CATEGORY_ID, [
       {
         identifier: FINISH_ACTION_ID,

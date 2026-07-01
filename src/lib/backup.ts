@@ -68,15 +68,26 @@ function sanitizeSession(raw: unknown): ReadingSession | null {
   const bookId = asString(r.bookId);
   const id = asString(r.id);
   if (!bookId || !id) return null;
+  const startTime = asNumber(r.startTime);
+  // The day key drives streaks, goals and the heatmap. Falling back to *today*
+  // would credit every restored session to the restore date, so derive it from
+  // startTime instead - and drop the session when neither is usable.
+  const rawDate = asString(r.date);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    ? rawDate
+    : startTime > 0
+    ? toDateKey(startTime)
+    : null;
+  if (!date) return null;
   return {
     ...(r as object),
     id,
     bookId,
-    startTime: asNumber(r.startTime),
+    startTime,
     endTime: asNumber(r.endTime),
     durationSeconds: Math.max(0, asNumber(r.durationSeconds)),
     pagesRead: Math.max(0, asNumber(r.pagesRead)),
-    date: asString(r.date, toDateKey()),
+    date,
   } as ReadingSession;
 }
 
@@ -124,6 +135,13 @@ function sanitizeNote(raw: unknown): BookNote | null {
     page: typeof r.page === 'number' && Number.isFinite(r.page) ? Math.floor(r.page) : undefined,
     createdAt: asNumber(r.createdAt, Date.now()),
   };
+}
+
+// Duplicated ids in a hand-merged backup would make patches/deletes hit every
+// copy (and break React list keys) - keep the first occurrence only.
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
 }
 
 // Thrown when the picked file isn't a valid backup. The UI layer maps this
@@ -199,30 +217,38 @@ export async function importData(): Promise<AppData | null> {
     throw new Error(INVALID_BACKUP);
   }
 
-  const books = parsed.books.map(sanitizeBook).filter((b): b is Book => b !== null);
+  const books = dedupeById(parsed.books.map(sanitizeBook).filter((b): b is Book => b !== null));
   // A "backup" that restores zero books would silently wipe the whole library
   // (replaceAll deletes the current data and covers). Treat it as invalid.
   if (books.length === 0) throw new Error(INVALID_BACKUP);
   const bookIds = new Set(books.map((b) => b.id));
-  const shelves = (Array.isArray(parsed.shelves) ? parsed.shelves : [])
-    .map(sanitizeShelf)
-    .filter((s): s is Shelf => s !== null);
+  const shelves = dedupeById(
+    (Array.isArray(parsed.shelves) ? parsed.shelves : [])
+      .map(sanitizeShelf)
+      .filter((s): s is Shelf => s !== null)
+  );
   const shelfIds = new Set(shelves.map((s) => s.id));
 
   const result: AppData = {
     ...emptyData,
     books: books.map((b) => ({ ...b, shelfIds: b.shelfIds.filter((id) => shelfIds.has(id)) })),
     // drop sessions/notes that reference a book not present in the backup
-    sessions: (Array.isArray(parsed.sessions) ? parsed.sessions : [])
-      .map(sanitizeSession)
-      .filter((s): s is ReadingSession => s !== null && bookIds.has(s.bookId)),
-    notes: (Array.isArray(parsed.notes) ? parsed.notes : [])
-      .map(sanitizeNote)
-      .filter((n): n is BookNote => n !== null && bookIds.has(n.bookId)),
+    sessions: dedupeById(
+      (Array.isArray(parsed.sessions) ? parsed.sessions : [])
+        .map(sanitizeSession)
+        .filter((s): s is ReadingSession => s !== null && bookIds.has(s.bookId))
+    ),
+    notes: dedupeById(
+      (Array.isArray(parsed.notes) ? parsed.notes : [])
+        .map(sanitizeNote)
+        .filter((n): n is BookNote => n !== null && bookIds.has(n.bookId))
+    ),
     shelves,
-    goals: (Array.isArray(parsed.goals) ? parsed.goals : [])
-      .map(sanitizeGoal)
-      .filter((g): g is Goal => g !== null),
+    goals: dedupeById(
+      (Array.isArray(parsed.goals) ? parsed.goals : [])
+        .map(sanitizeGoal)
+        .filter((g): g is Goal => g !== null)
+    ),
     version: typeof parsed.version === 'number' ? parsed.version : emptyData.version,
   };
 

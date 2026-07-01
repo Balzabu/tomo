@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n';
 import { APP_NAME } from '@/lib/constants';
 import { Button, Card, SectionTitle } from '@/components/ui';
 import { exportData, importData, INVALID_BACKUP } from '@/lib/backup';
+import { PERSIST_FAILED } from '@/lib/storage';
 import { deleteCoverFile } from '@/lib/covers';
 import { parseBookCsv } from '@/lib/importSources';
 import { lookupByIsbn } from '@/services/bookApi';
@@ -75,6 +76,8 @@ export default function DataSettings() {
             const msg =
               e instanceof Error && e.message === INVALID_BACKUP
                 ? tr('settings.invalidBackup', { app: APP_NAME })
+                : e instanceof Error && e.message === PERSIST_FAILED
+                ? tr('data.saveFailed')
                 : String(e);
             Alert.alert(tr('settings.importFailTitle'), msg);
           } finally {

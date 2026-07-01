@@ -7,7 +7,6 @@ const COVERS_DIR = `${FileSystem.documentDirectory}covers/`;
 
 export type PickResult =
   | { status: 'ok'; uri: string }
-  | { status: 'denied' }
   | { status: 'canceled' };
 
 export function isLocalCover(uri?: string): boolean {
@@ -44,9 +43,10 @@ async function ensureDir(): Promise<void> {
 
 /** Let the user pick an image and copy it into persistent storage. */
 export async function pickCover(): Promise<PickResult> {
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return { status: 'denied' };
-
+  // No permission gate: launchImageLibraryAsync uses the system picker, which
+  // needs no media permission. Requesting one here actually *broke* the picker
+  // on Android < 13, where the request includes WRITE_EXTERNAL_STORAGE - a
+  // permission this app strips from its manifest, so it was always denied.
   const res = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsEditing: true,

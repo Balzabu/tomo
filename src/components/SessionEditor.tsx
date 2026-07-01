@@ -30,7 +30,14 @@ interface Props {
   onSave: (draft: SessionDraft) => void;
 }
 
-const DAY = 86_400_000;
+/** Previous/next local midnight via calendar stepping - a fixed 24h offset
+ *  lands on the wrong day across DST transitions (23h/25h days). */
+function stepDay(base: number, delta: number): number {
+  const d = new Date(base);
+  d.setDate(d.getDate() + delta);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
 
 export function SessionEditor({
   visible,
@@ -81,8 +88,8 @@ export function SessionEditor({
     const sp = parseInt(startPage, 10);
     const ep = parseInt(endPage, 10);
     onSave({
-      startPage: Number.isFinite(sp) ? sp : undefined,
-      endPage: Number.isFinite(ep) ? ep : undefined,
+      startPage: Number.isFinite(sp) && sp >= 0 ? sp : undefined,
+      endPage: Number.isFinite(ep) && ep >= 0 ? ep : undefined,
       minutes: mins,
       dayTs,
     });
@@ -96,14 +103,14 @@ export function SessionEditor({
       title={title ?? (session ? tr('session.edit') : tr('session.add'))}
     >
       <View style={styles.dateRow}>
-        <Pressable onPress={() => setDayTs((d) => d - DAY)} hitSlop={8}>
+        <Pressable onPress={() => setDayTs((d) => stepDay(d, -1))} hitSlop={8}>
           <Ionicons name="chevron-back" size={24} color={c.primary} />
         </Pressable>
         <Text style={[styles.dateTxt, { color: c.text }]}>
           {isToday ? tr('session.today') : formatDate(dayTs, lang)}
         </Text>
         <Pressable
-          onPress={() => setDayTs((d) => Math.min(today.getTime(), d + DAY))}
+          onPress={() => setDayTs((d) => Math.min(today.getTime(), stepDay(d, 1)))}
           hitSlop={8}
           style={{ opacity: isToday ? 0.3 : 1 }}
         >

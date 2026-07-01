@@ -171,6 +171,19 @@ export default function BookDetailScreen() {
     }
   };
 
+  // The delete icon sits inside the tappable session row, so a slightly-off
+  // tap meant to open the editor must not silently erase history.
+  const confirmDeleteSession = (sessionId: string) => {
+    Alert.alert(tr('session.deleteTitle'), tr('session.deleteMsg'), [
+      { text: tr('common.cancel'), style: 'cancel' },
+      {
+        text: tr('common.delete'),
+        style: 'destructive',
+        onPress: () => store.deleteSession(sessionId),
+      },
+    ]);
+  };
+
   const confirmDelete = () => {
     Alert.alert(tr('book.deleteTitle'), tr('book.deleteMsg', { title: book.title }), [
       { text: tr('common.cancel'), style: 'cancel' },
@@ -428,7 +441,7 @@ export default function BookDetailScreen() {
                   {formatDuration(s.durationSeconds)}
                   {s.pagesRead ? ` · ${s.pagesRead} ${tr('common.pageAbbr')}` : ''}
                 </Text>
-                <Pressable onPress={() => store.deleteSession(s.id)} hitSlop={8}>
+                <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8}>
                   <Ionicons name="close" size={16} color={t.colors.textFaint} />
                 </Pressable>
               </Pressable>

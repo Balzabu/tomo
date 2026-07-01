@@ -12,10 +12,13 @@ import {
   ReadingStatus,
   Shelf,
 } from '@/types';
-import { emptyData, loadData, saveData } from '@/lib/storage';
+import { emptyData, loadData, saveData, PERSIST_FAILED } from '@/lib/storage';
 import { toDateKey, uid } from '@/lib/utils';
 import { SHELF_COLORS } from '@/theme/theme';
 import { refreshWidgets } from '@/widgets/refresh';
+import { useSnackbar } from '@/store/useSnackbar';
+import { useSettings } from '@/store/useSettings';
+import { resolveLang, translate } from '@/i18n';
 
 interface StoreState extends AppData {
   hydrated: boolean;
@@ -77,14 +80,32 @@ function snapshot(get: () => StoreState): AppData {
   return { books, sessions, notes, shelves, goals, version };
 }
 
+// Tell the user a disk write failed (storage full / AsyncStorage limit) - the
+// in-memory state is fine, but nothing since the last successful write would
+// survive a restart.
+function notifyPersistFailure(): void {
+  const lang = resolveLang(useSettings.getState().language);
+  useSnackbar.getState().show(translate(lang, 'data.saveFailed'));
+}
+
 function flushPersist(): void {
   if (persistTimer) {
     clearTimeout(persistTimer);
     persistTimer = null;
   }
   if (!latestGet) return;
-  const data = snapshot(latestGet);
-  void saveData(data).then(() => refreshWidgets(data));
+  const get = latestGet;
+  const data = snapshot(get);
+  // Clear the pending marker so an unchanged store isn't re-serialised (and all
+  // widgets re-rendered) on every subsequent app backgrounding.
+  latestGet = null;
+  void saveData(data).then((ok) => {
+    if (ok) return refreshWidgets(data);
+    // Keep the write pending so the next mutation/backgrounding retries it,
+    // unless a newer mutation already re-armed it.
+    latestGet = latestGet ?? get;
+    notifyPersistFailure();
+  });
 }
 
 function persist(get: () => StoreState) {
@@ -116,8 +137,11 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     const next: AppData = { ...emptyData, ...data };
     set(next);
-    await saveData(next);
+    const ok = await saveData(next);
     void refreshWidgets(next);
+    // Let the caller (backup import / clear data) surface the failure instead
+    // of reporting success for a restore that won't survive a restart.
+    if (!ok) throw new Error(PERSIST_FAILED);
   },
 
   addBook: (result, status = 'want_to_read') => {
@@ -192,12 +216,18 @@ export const useStore = create<StoreState>((set, get) => ({
       return sh.id;
     };
 
-    const keyOf = (b: { isbn?: string; title: string; authors: string[] }) =>
-      b.isbn
-        ? `isbn:${b.isbn}`
-        : `t:${b.title.trim().toLowerCase()}|${(b.authors[0] ?? '').trim().toLowerCase()}`;
+    // Match on ISBN *and* title|author: a book that exists with an ISBN must
+    // still be recognised when the CSV row lacks one (or carries the ISBN-10
+    // where the library has the ISBN-13).
+    const keysOf = (b: { isbn?: string; title: string; authors: string[] }) => {
+      const keys = [
+        `t:${b.title.trim().toLowerCase()}|${(b.authors[0] ?? '').trim().toLowerCase()}`,
+      ];
+      if (b.isbn) keys.push(`isbn:${b.isbn}`);
+      return keys;
+    };
 
-    const seen = new Set(state.books.map(keyOf));
+    const seen = new Set(state.books.flatMap(keysOf));
     const toAdd: Book[] = [];
     let skipped = 0;
 
@@ -206,12 +236,12 @@ export const useStore = create<StoreState>((set, get) => ({
         skipped++;
         continue;
       }
-      const k = keyOf(it);
-      if (seen.has(k)) {
+      const keys = keysOf(it);
+      if (keys.some((k) => seen.has(k))) {
         skipped++;
         continue;
       }
-      seen.add(k);
+      keys.forEach((k) => seen.add(k));
       const now = Date.now();
       toAdd.push({
         id: uid('b_'),
@@ -302,6 +332,10 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({
       books: s.books.map((b) => {
         if (b.id !== id) return b;
+        // Re-tapping the already-active status must be a no-op: without this,
+        // tapping "Finished" on a finished book stamps finishedAt with *today*,
+        // silently moving it into the current year's stats.
+        if (b.status === status) return b;
         const patch: Partial<Book> = { status };
         if (status === 'reading' && !b.startedAt) patch.startedAt = Date.now();
         // Leaving "finished" clears the finish date so a later re-read records a

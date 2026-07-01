@@ -12,7 +12,7 @@ import {
   unfinishedBooks,
   WidgetContext,
 } from './widget-shared';
-import { getReadingSelection, setReadingSelection } from './widget-prefs';
+import { getReadingSelection, removeReadingSelection, setReadingSelection } from './widget-prefs';
 import { CurrentlyReadingWidget } from './CurrentlyReadingWidget';
 import { QuickStartWidget, QuickStartItem } from './QuickStartWidget';
 import { StreakGoalWidget } from './StreakGoalWidget';
@@ -151,7 +151,10 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<
       // Other clicks use the built-in OPEN_URI action (handled natively).
       break;
     }
-    case 'WIDGET_DELETED':
+    case 'WIDGET_DELETED': {
+      if (name === 'CurrentlyReading') await removeReadingSelection(widgetId);
+      break;
+    }
     default:
       break;
   }

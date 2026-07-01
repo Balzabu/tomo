@@ -35,6 +35,10 @@ export default function SearchScreen() {
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
     if (query.trim().length < 3) {
+      // Also invalidate any in-flight search, or its late response would
+      // repopulate the list for a query the user already erased.
+      reqId.current++;
+      setLoading(false);
       setResults([]);
       setSearched(false);
       return;
@@ -139,9 +143,17 @@ function StatusPicker({
   const t = useTheme();
   const { t: tr } = useTranslation();
   const addBook = useStore((s) => s.addBook);
+  // One-shot guard: two quick taps on a status row would add the book twice
+  // (and pop two screens). Re-armed whenever a new result is picked.
+  const chosenRef = useRef(false);
+  useEffect(() => {
+    chosenRef.current = false;
+  }, [item]);
   if (!item) return null;
 
   const choose = (status: ReadingStatus) => {
+    if (chosenRef.current) return;
+    chosenRef.current = true;
     addBook(item, status);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();

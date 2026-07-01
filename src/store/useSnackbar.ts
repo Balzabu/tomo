@@ -9,6 +9,8 @@ interface SnackOptions {
 
 interface SnackbarState {
   message: string | null;
+  /** bumped on every show() so identical consecutive messages restart the timeout */
+  key: number;
   actionLabel?: string;
   _onAction?: () => void;
   _onDismiss?: () => void;
@@ -23,12 +25,14 @@ const cleared = { message: null, actionLabel: undefined, _onAction: undefined, _
 
 export const useSnackbar = create<SnackbarState>((set, get) => ({
   message: null,
+  key: 0,
   show: (message, opts) => {
     // A snackbar replaced before it times out still "dismissed" without its
     // action - fire the old onDismiss so its cleanup (e.g. deleting a cover) runs.
     get()._onDismiss?.();
     set({
       message,
+      key: get().key + 1,
       actionLabel: opts?.actionLabel,
       _onAction: opts?.onAction,
       _onDismiss: opts?.onDismiss,

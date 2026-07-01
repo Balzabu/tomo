@@ -10,15 +10,18 @@ export function Snackbar() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const message = useSnackbar((s) => s.message);
+  const key = useSnackbar((s) => s.key);
   const actionLabel = useSnackbar((s) => s.actionLabel);
   const act = useSnackbar((s) => s.act);
   const dismiss = useSnackbar((s) => s.dismiss);
 
+  // Keyed on `key`, not just the text: two identical messages in a row (e.g.
+  // deleting two books) must each get their full timeout / undo window.
   useEffect(() => {
     if (!message) return;
     const id = setTimeout(dismiss, 4000);
     return () => clearTimeout(id);
-  }, [message, dismiss]);
+  }, [message, key, dismiss]);
 
   if (!message) return null;
 

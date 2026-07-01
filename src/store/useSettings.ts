@@ -66,11 +66,13 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setScheme: (scheme) => {
     set({ scheme });
     persist(snapshot(get, { scheme }));
+    refreshPlacedWidgets();
   },
 
   setLanguage: (language) => {
     set({ language });
     persist(snapshot(get, { language }));
+    refreshPlacedWidgets();
   },
 
   setReminder: (reminderEnabled, reminderHour, reminderMinute) => {
@@ -78,6 +80,19 @@ export const useSettings = create<SettingsState>((set, get) => ({
     persist(snapshot(get, { reminderEnabled, reminderHour, reminderMinute }));
   },
 }));
+
+// Widgets render with the persisted theme/language, so a change here must
+// re-render them immediately - otherwise they stay wrong until the next data
+// mutation or 30-minute periodic update. Lazy require: a static import would
+// create a cycle (widgets → i18n → this store).
+function refreshPlacedWidgets(): void {
+  try {
+    const { refreshWidgets } = require('@/widgets/refresh') as typeof import('@/widgets/refresh');
+    void refreshWidgets();
+  } catch {
+    // best-effort, like every other widget refresh
+  }
+}
 
 /** Build the full persisted snapshot from current state plus an override. */
 function snapshot(get: () => SettingsState, override: Partial<Persisted>): Persisted {
