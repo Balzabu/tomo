@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import type { ShareAspect, ShareStyle } from '@/components/ShareCard';
+import { SHARE_IMMERSIVE_BG, SHARE_PAPER_BG, SHARE_PAPER_TEXT } from '@/lib/shareTheme';
 
 interface Props {
   styles: ShareStyle[]; // which styles are offered (book vs quote differ)
@@ -17,8 +18,8 @@ interface Props {
 const SWATCH: Record<ShareStyle, (primary: string, accent: string) => { bg: string; gradient?: string }> = {
   minimal: (p) => ({ bg: p }),
   gradient: (p, a) => ({ bg: p, gradient: a }),
-  immersive: () => ({ bg: '#15151b' }),
-  paper: () => ({ bg: '#f3ead7' }),
+  immersive: () => ({ bg: SHARE_IMMERSIVE_BG }),
+  paper: () => ({ bg: SHARE_PAPER_BG }),
 };
 
 export function ShareStyleControls({ styles, style, aspect, primary, accent, onStyle, onAspect }: Props) {
@@ -47,7 +48,7 @@ export function ShareStyleControls({ styles, style, aspect, primary, accent, onS
                   <View style={[s.swatchHalf, { backgroundColor: sw.gradient }]} />
                 ) : null}
                 {st === 'immersive' ? <Ionicons name="image" size={16} color="#fff" /> : null}
-                {st === 'paper' ? <Text style={{ fontSize: 15, color: '#3a2f23', fontFamily: 'serif' }}>“</Text> : null}
+                {st === 'paper' ? <Text style={{ fontSize: 15, color: SHARE_PAPER_TEXT, fontFamily: 'serif' }}>“</Text> : null}
               </View>
             </Pressable>
           );

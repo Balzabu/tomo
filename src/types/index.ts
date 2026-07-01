@@ -7,14 +7,6 @@ export type ReadingStatus =
   | 'paused'
   | 'dnf'; // did not finish
 
-export const STATUS_LABELS: Record<ReadingStatus, string> = {
-  want_to_read: 'Da leggere',
-  reading: 'In lettura',
-  finished: 'Letto',
-  paused: 'In pausa',
-  dnf: 'Abbandonato',
-};
-
 export const STATUS_ORDER: ReadingStatus[] = [
   'reading',
   'want_to_read',

@@ -71,6 +71,29 @@ export async function deleteCoverFile(uri?: string): Promise<void> {
   }
 }
 
+/**
+ * Delete cover files no longer referenced by any book. This reclaims orphans
+ * left behind when the app is force-quit during the delete-undo window (the
+ * book record is already gone but its cover cleanup never ran). Best-effort.
+ */
+export async function reconcileCovers(referencedUrls: (string | undefined)[]): Promise<void> {
+  try {
+    const info = await FileSystem.getInfoAsync(COVERS_DIR);
+    if (!info.exists) return;
+    const referenced = new Set(referencedUrls.filter(isLocalCover) as string[]);
+    const names = await FileSystem.readDirectoryAsync(COVERS_DIR);
+    await Promise.all(
+      names.map((name) => {
+        const uri = `${COVERS_DIR}${name}`;
+        if (referenced.has(uri)) return Promise.resolve();
+        return FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      })
+    );
+  } catch {
+    // best-effort cleanup
+  }
+}
+
 /** Remove every locally-stored cover file (used when wiping all data). */
 export async function clearCovers(): Promise<void> {
   try {

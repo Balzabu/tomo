@@ -62,11 +62,6 @@ export function formatDate(ts: number, lang: Lang): string {
   return `${d.getDate()} ${m} ${d.getFullYear()}`;
 }
 
-export function formatDateShort(ts: number, lang: Lang): string {
-  const d = new Date(ts);
-  return `${d.getDate()} ${monthsShort[lang][d.getMonth()]}`;
-}
-
 export function localizedWeekdaysShort(lang: Lang): string[] {
   return weekdaysShort[lang];
 }

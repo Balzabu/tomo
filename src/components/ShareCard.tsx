@@ -3,6 +3,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Theme } from '@/theme/theme';
+import {
+  SHARE_IMMERSIVE_BG,
+  SHARE_PAPER_BG,
+  SHARE_PAPER_MUTED,
+  SHARE_PAPER_TEXT,
+} from '@/lib/shareTheme';
 
 export type ShareStyle = 'minimal' | 'gradient' | 'immersive' | 'paper';
 export type ShareAspect = 'square' | 'story';
@@ -39,9 +45,9 @@ interface Props {
   content: ShareContent;
 }
 
-const PAPER_BG = '#f3ead7';
-const PAPER_TEXT = '#3a2f23';
-const PAPER_MUTED = '#7a6a52';
+const PAPER_BG = SHARE_PAPER_BG;
+const PAPER_TEXT = SHARE_PAPER_TEXT;
+const PAPER_MUTED = SHARE_PAPER_MUTED;
 
 /** A capture-ready shareable card. The forwarded ref is what view-shot snapshots. */
 export const ShareCard = forwardRef<View, Props>(function ShareCard(
@@ -203,7 +209,7 @@ function WrappedBody({
 
 function bgColor(style: ShareStyle, c: Theme['colors']): string {
   if (style === 'paper') return PAPER_BG;
-  if (style === 'immersive') return '#15151b';
+  if (style === 'immersive') return SHARE_IMMERSIVE_BG;
   return c.primary;
 }
 function chipBg(style: ShareStyle): string {

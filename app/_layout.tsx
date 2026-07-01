@@ -17,8 +17,10 @@ import { useSettings } from '@/store/useSettings';
 import { useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { loadGoogleApiKey } from '@/lib/prefs';
+import { migrateLegacyKeys } from '@/lib/migrate';
 import { setGoogleApiKey } from '@/services/bookApi';
-import { scheduleDailyReminder } from '@/lib/notifications';
+import { scheduleDailyReminder, hasNotificationPermission } from '@/lib/notifications';
+import { reconcileCovers } from '@/lib/covers';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Snackbar } from '@/components/Snackbar';
 import { ActiveSessionWatcher } from '@/components/ActiveSessionWatcher';
@@ -43,21 +45,40 @@ export default function RootLayout() {
   const reminderMinute = useSettings((s) => s.reminderMinute);
 
   useEffect(() => {
-    void hydrate();
-    void hydrateSettings();
-    void hydrateActiveSession();
-    void loadGoogleApiKey().then(setGoogleApiKey);
+    void (async () => {
+      // Rename legacy "bootrack:" storage keys to "tomo:" before anything reads them.
+      await migrateLegacyKeys();
+      void hydrate();
+      void hydrateSettings();
+      void hydrateActiveSession();
+      void loadGoogleApiKey().then(setGoogleApiKey);
+    })();
   }, [hydrate, hydrateSettings, hydrateActiveSession]);
 
-  // Re-arm the daily reading reminder on launch (survives reboots / locale change).
+  // Re-arm the daily reading reminder on launch (survives reboots / locale
+  // change). If notification permission was revoked in the meantime, reflect
+  // that in the setting instead of "scheduling" a reminder that can never fire.
   useEffect(() => {
     if (!settingsHydrated || !reminderEnabled) return;
-    void scheduleDailyReminder(reminderHour, reminderMinute, tr('notif.title'), tr('notif.body'));
+    void (async () => {
+      if (!(await hasNotificationPermission())) {
+        useSettings.getState().setReminder(false, reminderHour, reminderMinute);
+        return;
+      }
+      await scheduleDailyReminder(reminderHour, reminderMinute, tr('notif.title'), tr('notif.body'));
+    })();
   }, [settingsHydrated, reminderEnabled, reminderHour, reminderMinute, tr]);
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.colors.bg);
   }, [t.colors.bg]);
+
+  // Once data is loaded, reclaim cover files orphaned by a force-quit during a
+  // delete-undo window. Runs once per launch, best-effort.
+  useEffect(() => {
+    if (!hydrated) return;
+    void reconcileCovers(useStore.getState().books.map((b) => b.coverUrl));
+  }, [hydrated]);
 
   const base = t.dark ? DarkTheme : DefaultTheme;
   const navTheme: NavTheme = {
@@ -117,9 +138,9 @@ export default function RootLayout() {
               <Stack.Screen name="settings/data" options={{ title: tr('settings.backupImport') }} />
             </Stack>
           )}
-          </ErrorBoundary>
           <Snackbar />
           {hydrated && settingsHydrated ? <ActiveSessionWatcher /> : null}
+          </ErrorBoundary>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

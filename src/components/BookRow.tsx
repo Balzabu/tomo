@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -8,7 +9,10 @@ import { BookCover } from './BookCover';
 import { ProgressBar } from './ui';
 import { RatingStars } from './RatingStars';
 
-export function BookRow({
+// Memoized so an unrelated parent re-render (e.g. typing in the library search)
+// doesn't re-render every visible row. Callbacks take the book id so the parent
+// can keep them stable (see the library screen).
+export const BookRow = memo(function BookRow({
   book,
   onPress,
   onLongPress,
@@ -16,8 +20,8 @@ export function BookRow({
   selected,
 }: {
   book: Book;
-  onPress?: () => void;
-  onLongPress?: () => void;
+  onPress?: (id: string) => void;
+  onLongPress?: (id: string) => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
@@ -32,8 +36,8 @@ export function BookRow({
 
   return (
     <Pressable
-      onPress={onPress ?? (() => router.push(`/book/${book.id}`))}
-      onLongPress={onLongPress}
+      onPress={() => (onPress ? onPress(book.id) : router.push(`/book/${book.id}`))}
+      onLongPress={onLongPress ? () => onLongPress(book.id) : undefined}
       delayLongPress={300}
       style={({ pressed }) => [
         styles.row,
@@ -79,7 +83,7 @@ export function BookRow({
       ) : null}
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {

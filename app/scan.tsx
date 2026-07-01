@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
@@ -22,6 +22,10 @@ export default function ScanScreen() {
   // ref lock: state updates are async, this blocks a second barcode firing
   // in the same frame before `phase` has re-rendered the camera off.
   const lockRef = useRef(false);
+  // The ISBN lookup can take seconds; if the user dismisses the modal while it
+  // runs, don't add a book they abandoned / call router.back() / setState.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const cameraActive = phase === 'scanning';
 
@@ -33,6 +37,7 @@ export default function ScanScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const result = await lookupByIsbn(data);
+    if (!mountedRef.current) return; // screen was dismissed mid-lookup
     if (result) {
       addBook(result, 'want_to_read');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

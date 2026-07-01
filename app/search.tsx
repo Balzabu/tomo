@@ -29,6 +29,8 @@ export default function SearchScreen() {
   const [picker, setPicker] = useState<BookSearchResult | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqId = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -41,8 +43,9 @@ export default function SearchScreen() {
       const myId = ++reqId.current;
       setLoading(true);
       const r = await searchBooks(query);
-      // Ignore a stale response if a newer search started meanwhile.
-      if (myId !== reqId.current) return;
+      // Ignore a stale response (newer search) or one that resolved after the
+      // screen was dismissed.
+      if (myId !== reqId.current || !mountedRef.current) return;
       setResults(r);
       setSearched(true);
       setLoading(false);

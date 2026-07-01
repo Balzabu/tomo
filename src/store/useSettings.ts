@@ -20,7 +20,7 @@ interface SettingsState {
   setReminder: (enabled: boolean, hour: number, minute: number) => void;
 }
 
-const STORAGE_KEY = 'bootrack:settings:v2';
+const STORAGE_KEY = 'tomo:settings:v2';
 
 interface Persisted {
   scheme: SchemeChoice;

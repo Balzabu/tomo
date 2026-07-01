@@ -100,7 +100,7 @@ export function WidgetConfigScreen({
             onPress={() => commit()}
             style={[styles.okBtn, { backgroundColor: c.primary }]}
           >
-            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '700' }}>OK</Text>
+            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '700' }}>{t('common.ok')}</Text>
           </Pressable>
         </View>
       ) : (

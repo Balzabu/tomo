@@ -48,7 +48,16 @@ function cleanIsbn(v?: string): string | undefined {
 
 function parseDate(v?: string): number | undefined {
   if (!v) return undefined;
-  const t = Date.parse(v.trim().replace(/\//g, '-'));
+  const s = v.trim().replace(/\//g, '-');
+  // A bare YYYY-MM-DD is parsed by Date.parse as UTC midnight, but every yearly
+  // aggregate buckets in local time - so in negative-offset zones the date
+  // slips to the previous day/year. Build a LOCAL date (at noon, DST-safe).
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) {
+    const t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0).getTime();
+    return Number.isFinite(t) ? t : undefined;
+  }
+  const t = Date.parse(s);
   return Number.isFinite(t) ? t : undefined;
 }
 

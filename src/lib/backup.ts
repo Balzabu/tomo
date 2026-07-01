@@ -16,6 +16,9 @@ function asString(v: unknown, fallback = ''): string {
 function asNumber(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
+function asOptionalNumber(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
 function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
@@ -29,6 +32,11 @@ function sanitizeBook(raw: unknown): Book | null {
   if (!id || !title) return null;
   const pageCount =
     typeof r.pageCount === 'number' && r.pageCount > 0 ? Math.floor(r.pageCount) : undefined;
+  const currentPage = Math.max(0, asNumber(r.currentPage));
+  const rating =
+    typeof r.rating === 'number' && Number.isFinite(r.rating)
+      ? Math.max(0, Math.min(5, r.rating))
+      : undefined;
   return {
     ...(r as object),
     id,
@@ -37,9 +45,18 @@ function sanitizeBook(raw: unknown): Book | null {
     status: VALID_STATUS.includes(r.status as ReadingStatus)
       ? (r.status as ReadingStatus)
       : 'want_to_read',
-    currentPage: Math.max(0, asNumber(r.currentPage)),
+    // clamp progress into the valid range and coerce the untrusted date/rating
+    // fields so a hand-edited backup can't poison stats with NaN/strings.
+    currentPage: pageCount ? Math.min(currentPage, pageCount) : currentPage,
     pageCount,
+    rating,
     addedAt: asNumber(r.addedAt, Date.now()),
+    startedAt: asOptionalNumber(r.startedAt),
+    finishedAt: asOptionalNumber(r.finishedAt),
+    readCount:
+      typeof r.readCount === 'number' && Number.isFinite(r.readCount)
+        ? Math.max(0, Math.floor(r.readCount))
+        : undefined,
     shelfIds: asStringArray(r.shelfIds),
     source: (r.source as Book['source']) ?? 'manual',
   } as Book;
@@ -113,6 +130,11 @@ function sanitizeNote(raw: unknown): BookNote | null {
 // code to a localized message (backup.ts stays free of user-facing strings).
 export const INVALID_BACKUP = 'INVALID_BACKUP';
 
+// Guard against reading a pathologically large file into memory / JSON.parse.
+// A real backup with embedded covers can be tens of MB; this only rejects the
+// absurd (a mistakenly-picked video, a malicious multi-GB file).
+const MAX_BACKUP_BYTES = 128 * 1024 * 1024;
+
 // Backup file = AppData plus base64 of locally-stored custom covers, keyed by
 // book id. Remote (http) covers stay as URLs and aren't embedded.
 interface BackupFile extends AppData {
@@ -130,20 +152,27 @@ export async function exportData(data: AppData, dialogTitle: string): Promise<bo
   }
 
   const payload: BackupFile = { ...data, _covers: covers };
-  const json = JSON.stringify(payload, null, 2);
+  // No pretty-print: a backup with many embedded covers is already large, and
+  // indentation roughly doubles the in-memory string for no user benefit.
+  const json = JSON.stringify(payload);
   const fileUri = `${FileSystem.cacheDirectory}tomo-backup-${toDateKey()}.json`;
   await FileSystem.writeAsStringAsync(fileUri, json, {
     encoding: FileSystem.EncodingType.UTF8,
   });
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(fileUri, {
-      mimeType: 'application/json',
-      dialogTitle,
-      UTI: 'public.json',
-    });
-    return true;
+  try {
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/json',
+        dialogTitle,
+        UTI: 'public.json',
+      });
+      return true;
+    }
+    return false;
+  } finally {
+    // Don't leave backup copies accumulating in the cache directory.
+    await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
   }
-  return false;
 }
 
 /** Let the user pick a JSON backup file, parse it, and restore embedded covers. */
@@ -153,7 +182,11 @@ export async function importData(): Promise<AppData | null> {
     copyToCacheDirectory: true,
   });
   if (res.canceled || !res.assets?.[0]) return null;
-  const content = await FileSystem.readAsStringAsync(res.assets[0].uri, {
+  const asset = res.assets[0];
+  if (asset.size != null && asset.size > MAX_BACKUP_BYTES) {
+    throw new Error(INVALID_BACKUP);
+  }
+  const content = await FileSystem.readAsStringAsync(asset.uri, {
     encoding: FileSystem.EncodingType.UTF8,
   });
   let parsed: Partial<BackupFile>;

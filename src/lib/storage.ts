@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppData } from '@/types';
 
-const STORAGE_KEY = 'bootrack:data:v1';
+const STORAGE_KEY = 'tomo:data:v1';
 
 export const emptyData: AppData = {
   books: [],

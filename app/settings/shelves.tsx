@@ -11,7 +11,9 @@ import { ShelfEditor } from '@/components/ShelfEditor';
 export default function ShelvesSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const store = useStore();
+  // Actions are stable; subscribe only to the reactive shelves list.
+  const store = useStore.getState();
+  const shelves = useStore((s) => s.shelves);
   const [editorVisible, setEditorVisible] = useState(false);
   const [editingShelf, setEditingShelf] = useState<Shelf | null>(null);
 
@@ -33,11 +35,11 @@ export default function ShelvesSettings() {
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.lg }}>
       <Button label={tr('settings.newShelf')} icon="add" full onPress={openNew} />
 
-      {store.shelves.length === 0 ? (
+      {shelves.length === 0 ? (
         <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.shelvesEmpty')}</Text>
       ) : (
         <Card style={{ gap: spacing.md }}>
-          {store.shelves.map((sh) => (
+          {shelves.map((sh) => (
             <Pressable key={sh.id} style={styles.shelfRow} onPress={() => openEdit(sh)}>
               <View style={[styles.marker, { backgroundColor: sh.color }]}>
                 {sh.emoji ? (

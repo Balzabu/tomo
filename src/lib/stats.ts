@@ -127,18 +127,20 @@ export function buildHeatmap(
   start.setDate(lastMonday.getDate() - (weeks - 1) * 7);
 
   const cells: HeatCell[] = [];
-  const max = Math.max(1, ...Array.from(byDay.values()));
   for (let i = 0; i < weeks * 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i); // calendar step (DST-safe)
     const key = toDateKey(d.getTime());
-    const seconds = byDay.get(key) ?? 0;
-    let level: HeatCell['level'] = 0;
-    if (seconds > 0) {
-      const ratio = seconds / max;
-      level = ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+    cells.push({ date: key, seconds: byDay.get(key) ?? 0, level: 0 });
+  }
+  // Normalise intensity against the busiest day *in view*, not all-time, so a
+  // single historic marathon day doesn't dim every recent cell.
+  const max = Math.max(1, ...cells.map((c) => c.seconds));
+  for (const cell of cells) {
+    if (cell.seconds > 0) {
+      const ratio = cell.seconds / max;
+      cell.level = ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
     }
-    cells.push({ date: key, seconds, level });
   }
   return { cells, cols: weeks };
 }

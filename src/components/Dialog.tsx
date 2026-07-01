@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, spacing, useTheme } from '@/theme/theme';
+import { useTranslation } from '@/i18n';
 
 interface Props {
   visible: boolean;
@@ -23,6 +24,7 @@ interface Props {
 /** Centered modal dialog for forms. Tall content should manage its own ScrollView. */
 export function Dialog({ visible, onClose, title, onShow, children }: Props) {
   const t = useTheme();
+  const { t: tr } = useTranslation();
   const c = t.colors;
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function Dialog({ visible, onClose, title, onShow, children }: Props) {
             {title ? (
               <View style={styles.head}>
                 <Text style={[styles.title, { color: c.text }]}>{title}</Text>
-                <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
+                <Pressable onPress={onClose} hitSlop={8} accessibilityLabel={tr('common.close')}>
                   <Ionicons name="close" size={22} color={c.textFaint} />
                 </Pressable>
               </View>

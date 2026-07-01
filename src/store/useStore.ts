@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { AppState } from 'react-native';
 import {
   AppData,
   Book,
@@ -27,12 +28,14 @@ interface StoreState extends AppData {
   addManualBook: (input: Partial<Book> & { title: string }) => Book;
   addImportedBooks: (items: ImportedBook[]) => { added: number; skipped: number; addedIds: string[] };
   updateBook: (id: string, patch: Partial<Book>) => void;
+  updateBooks: (patches: { id: string; patch: Partial<Book> }[]) => void;
   deleteBook: (id: string) => void;
   deleteBooks: (ids: string[]) => { books: Book[]; sessions: ReadingSession[]; notes: BookNote[] };
   restoreBooks: (data: { books: Book[]; sessions: ReadingSession[]; notes: BookNote[] }) => void;
   setStatus: (id: string, status: ReadingStatus) => void;
   setProgress: (id: string, currentPage: number) => void;
   setRating: (id: string, rating: number) => void;
+  startReread: (id: string) => void;
   toggleShelfForBook: (bookId: string, shelfId: string) => void;
 
   // Sessions
@@ -58,12 +61,43 @@ interface StoreState extends AppData {
   deleteGoal: (id: string) => void;
 }
 
-function persist(get: () => StoreState) {
+// --- Debounced persistence -------------------------------------------------
+// Every mutation used to serialise the whole DB to disk *and* re-read all of it
+// back to refresh the widgets. We now coalesce a burst of mutations into a
+// single write (bounded within PERSIST_DEBOUNCE_MS) and hand the in-memory
+// snapshot to the widgets so they never re-read what we just wrote. Any pending
+// write is flushed immediately when the app is backgrounded, so nothing is lost
+// if the OS then kills the process.
+const PERSIST_DEBOUNCE_MS = 400;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let latestGet: (() => StoreState) | null = null;
+
+function snapshot(get: () => StoreState): AppData {
   const { books, sessions, notes, shelves, goals, version } = get();
-  void saveData({ books, sessions, notes, shelves, goals, version }).then(() => {
-    void refreshWidgets();
-  });
+  return { books, sessions, notes, shelves, goals, version };
 }
+
+function flushPersist(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  if (!latestGet) return;
+  const data = snapshot(latestGet);
+  void saveData(data).then(() => refreshWidgets(data));
+}
+
+function persist(get: () => StoreState) {
+  latestGet = get;
+  // A flush is already scheduled; it will read the latest state when it fires.
+  if (persistTimer) return;
+  persistTimer = setTimeout(flushPersist, PERSIST_DEBOUNCE_MS);
+}
+
+// Flush any pending write before the app is backgrounded / killed.
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') flushPersist();
+});
 
 export const useStore = create<StoreState>((set, get) => ({
   ...emptyData,
@@ -75,8 +109,15 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   replaceAll: async (data) => {
-    set({ ...emptyData, ...data });
-    await saveData({ ...emptyData, ...data });
+    // A full replace supersedes any queued incremental write.
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    const next: AppData = { ...emptyData, ...data };
+    set(next);
+    await saveData(next);
+    void refreshWidgets(next);
   },
 
   addBook: (result, status = 'want_to_read') => {
@@ -208,6 +249,20 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(get);
   },
 
+  // Apply many book patches in a single state update + persist (used by
+  // background enrichment so it doesn't rewrite the whole DB once per book).
+  updateBooks: (patches) => {
+    if (patches.length === 0) return;
+    const map = new Map(patches.map((p) => [p.id, p.patch]));
+    set((s) => ({
+      books: s.books.map((b) => {
+        const patch = map.get(b.id);
+        return patch ? { ...b, ...patch } : b;
+      }),
+    }));
+    persist(get);
+  },
+
   deleteBook: (id) => {
     set((s) => ({
       books: s.books.filter((b) => b.id !== id),
@@ -249,6 +304,9 @@ export const useStore = create<StoreState>((set, get) => ({
         if (b.id !== id) return b;
         const patch: Partial<Book> = { status };
         if (status === 'reading' && !b.startedAt) patch.startedAt = Date.now();
+        // Leaving "finished" clears the finish date so a later re-read records a
+        // fresh one instead of silently keeping the stale year.
+        if (status !== 'finished' && b.status === 'finished') patch.finishedAt = undefined;
         if (status === 'finished') {
           patch.finishedAt = Date.now();
           if (b.pageCount) patch.currentPage = b.pageCount;
@@ -273,7 +331,9 @@ export const useStore = create<StoreState>((set, get) => ({
         }
         if (b.pageCount && page >= b.pageCount) {
           patch.status = 'finished';
-          patch.finishedAt = b.finishedAt ?? Date.now();
+          // Fresh date on a *new* completion (matches setStatus); keep the
+          // existing one when the book was already finished.
+          patch.finishedAt = b.status !== 'finished' ? Date.now() : b.finishedAt;
           if (b.status !== 'finished') patch.readCount = (b.readCount ?? 0) + 1;
         }
         return { ...b, ...patch };
@@ -284,6 +344,20 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setRating: (id, rating) => {
     get().updateBook(id, { rating });
+  },
+
+  // Start a fresh read cycle on a finished book: back to "reading" from page 0,
+  // clearing the old finish date. readCount is preserved and gets bumped again
+  // when this cycle reaches the end (via setProgress/setStatus).
+  startReread: (id) => {
+    set((s) => ({
+      books: s.books.map((b) =>
+        b.id === id
+          ? { ...b, status: 'reading', currentPage: 0, startedAt: Date.now(), finishedAt: undefined }
+          : b
+      ),
+    }));
+    persist(get);
   },
 
   toggleShelfForBook: (bookId, shelfId) => {

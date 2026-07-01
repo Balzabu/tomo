@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * `widgetId`. The "Currently reading" widget lets the user pick *which* of the
  * books they're reading it shows; that choice is stored here, keyed by widgetId.
  */
-const READING_SEL_KEY = 'bootrack:widget:reading-selection:v1';
+const READING_SEL_KEY = 'tomo:widget:reading-selection:v1';
 
 type SelectionMap = Record<string, string>;
 

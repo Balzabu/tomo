@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { AppData, Book } from '@/types';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -12,26 +13,33 @@ import { deleteCoverFile } from '@/lib/covers';
 import { parseBookCsv } from '@/lib/importSources';
 import { lookupByIsbn } from '@/services/bookApi';
 
+// CSV exports are plain text; anything this big is not a Goodreads/StoryGraph file.
+const MAX_CSV_BYTES = 16 * 1024 * 1024;
+
 export default function DataSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const store = useStore();
   const [busy, setBusy] = useState(false);
 
-  const data = {
-    books: store.books,
-    sessions: store.sessions,
-    notes: store.notes,
-    shelves: store.shelves,
-    goals: store.goals,
-    version: store.version,
-  };
+  // Background page-count enrichment (after a CSV import) must stop if the user
+  // leaves this screen, so it doesn't keep hitting the network and writing.
+  const enrichCancelled = useRef(false);
+  useEffect(() => () => { enrichCancelled.current = true; }, []);
 
   const onExport = async () => {
-    if (store.books.length === 0) {
+    const s = useStore.getState();
+    if (s.books.length === 0) {
       Alert.alert(tr('settings.nothingExportTitle'), tr('settings.nothingExportMsg'));
       return;
     }
+    const data: AppData = {
+      books: s.books,
+      sessions: s.sessions,
+      notes: s.notes,
+      shelves: s.shelves,
+      goals: s.goals,
+      version: s.version,
+    };
     try {
       setBusy(true);
       const ok = await exportData(data, tr('settings.exportTitle'));
@@ -53,9 +61,14 @@ export default function DataSettings() {
             setBusy(true);
             const imported = await importData();
             if (imported) {
-              const oldCovers = store.books.map((b) => b.coverUrl);
-              await store.replaceAll(imported);
-              oldCovers.forEach((u) => void deleteCoverFile(u));
+              const oldCovers = useStore.getState().books.map((b) => b.coverUrl);
+              await useStore.getState().replaceAll(imported);
+              // Only drop old cover files the restored data no longer references
+              // (a re-import on the same device can keep the same local paths).
+              const kept = new Set(imported.books.map((b) => b.coverUrl).filter(Boolean));
+              oldCovers.forEach((u) => {
+                if (u && !kept.has(u)) void deleteCoverFile(u);
+              });
               Alert.alert(tr('common.done'), tr('settings.importDoneMsg'));
             }
           } catch (e) {
@@ -77,22 +90,28 @@ export default function DataSettings() {
       .getState()
       .books.filter((b) => ids.includes(b.id) && b.isbn && !b.pageCount)
       .slice(0, 60); // cap network work
+    const patches: { id: string; patch: Partial<Book> }[] = [];
     for (const b of targets) {
+      if (enrichCancelled.current) break;
       try {
         const found = await lookupByIsbn(b.isbn!);
         if (found?.pageCount) {
           // A finished book imported without page data (e.g. StoryGraph) sits at
           // currentPage 0; once we learn the page count, mark it fully read.
-          const patch =
-            b.status === 'finished' && b.currentPage < found.pageCount
-              ? { pageCount: found.pageCount, currentPage: found.pageCount }
-              : { pageCount: found.pageCount };
-          store.updateBook(b.id, patch);
+          patches.push({
+            id: b.id,
+            patch:
+              b.status === 'finished' && b.currentPage < found.pageCount
+                ? { pageCount: found.pageCount, currentPage: found.pageCount }
+                : { pageCount: found.pageCount },
+          });
         }
       } catch {
         // best-effort; skip on failure
       }
     }
+    // One batched write instead of one full-DB write per enriched book.
+    if (patches.length) useStore.getState().updateBooks(patches);
   };
 
   const onImportCsv = async () => {
@@ -110,7 +129,12 @@ export default function DataSettings() {
         copyToCacheDirectory: true,
       });
       if (res.canceled || !res.assets?.[0]) return;
-      const content = await FileSystem.readAsStringAsync(res.assets[0].uri, {
+      const asset = res.assets[0];
+      if (asset.size != null && asset.size > MAX_CSV_BYTES) {
+        Alert.alert(tr('settings.importFailTitle'), tr('settings.fileTooLarge'));
+        return;
+      }
+      const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
       const parsed = parseBookCsv(content);
@@ -118,7 +142,7 @@ export default function DataSettings() {
         Alert.alert(tr('settings.importFailTitle'), tr('settings.csvUnsupported'));
         return;
       }
-      const { added, skipped, addedIds } = store.addImportedBooks(parsed.books);
+      const { added, skipped, addedIds } = useStore.getState().addImportedBooks(parsed.books);
       Alert.alert(
         tr('common.done'),
         tr('settings.csvImported', {

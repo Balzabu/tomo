@@ -22,6 +22,8 @@ interface Props {
   defaultStartPage?: number;
   /** prefill the minutes field when adding (ignored when editing a session) */
   defaultMinutes?: number;
+  /** default day (any ms timestamp) when adding; falls back to today */
+  defaultDayTs?: number;
   /** override the dialog title (defaults to add/edit) */
   title?: string;
   onClose: () => void;
@@ -35,6 +37,7 @@ export function SessionEditor({
   session,
   defaultStartPage,
   defaultMinutes,
+  defaultDayTs,
   title,
   onClose,
   onSave,
@@ -61,11 +64,11 @@ export function SessionEditor({
       setStartPage(defaultStartPage != null ? String(defaultStartPage) : '');
       setEndPage('');
       setMinutes(defaultMinutes != null ? String(defaultMinutes) : '');
-      const d = new Date();
+      const d = new Date(defaultDayTs ?? Date.now());
       d.setHours(0, 0, 0, 0);
       setDayTs(d.getTime());
     }
-  }, [visible, session, defaultStartPage, defaultMinutes]);
+  }, [visible, session, defaultStartPage, defaultMinutes, defaultDayTs]);
 
   const mins = parseInt(minutes, 10);
   const canSave = Number.isFinite(mins) && mins > 0;

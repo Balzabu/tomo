@@ -80,8 +80,17 @@ function googleAvailable(): boolean {
   return googleApiKey ? true : Date.now() >= googleBlockedUntil;
 }
 
+// Only accept http(s) covers (upgraded to https); reject file:/data:/other
+// schemes a spoofed API response might slip in before we hand it to the loader.
 function httpsCover(url?: string): string | undefined {
-  return url ? url.replace('http://', 'https://') : undefined;
+  if (!url) return undefined;
+  const upgraded = url.replace(/^http:\/\//i, 'https://');
+  return /^https:\/\//i.test(upgraded) ? upgraded : undefined;
+}
+
+// Strip the user's API key before logging a URL (it lands in logcat otherwise).
+function redactUrl(url: string): string {
+  return url.replace(/([?&]key=)[^&]*/i, '$1REDACTED');
 }
 
 interface FetchResult<T> {
@@ -91,18 +100,21 @@ interface FetchResult<T> {
 
 /** fetch JSON with a timeout; never throws - returns status + parsed body. */
 async function getJson<T>(url: string): Promise<FetchResult<T>> {
+  const controller = new AbortController();
+  // Declared outside try so the throw path can clear it too, and kept armed
+  // through res.json() so a slow body read is bounded by the same timeout.
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
     const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
-    clearTimeout(timeout);
     if (!res.ok) return { status: res.status, data: null };
     const ct = res.headers.get('content-type') ?? '';
     if (!ct.includes('json')) return { status: res.status, data: null };
     return { status: res.status, data: (await res.json()) as T };
   } catch (e) {
-    console.warn(`getJson failed for ${url}:`, String(e));
+    console.warn(`getJson failed for ${redactUrl(url)}:`, String(e));
     return { status: 0, data: null };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

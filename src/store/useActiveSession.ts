@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { dismissSessionNotification } from '@/lib/notifications';
 
 // A reading session that is currently in progress. Persisted to disk so it
 // survives the OS killing the app process while the screen is off - the
 // duration is wall-clock based (timestamps), so we can always reconstruct it.
-const STORAGE_KEY = 'bootrack:activeSession:v1';
+const STORAGE_KEY = 'tomo:activeSession:v1';
 
 export interface ActiveSession {
   bookId: string;
@@ -147,6 +148,9 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
   clearFinishRequest: () => set({ finishRequested: false }),
 
   clear: () => {
+    // Always dismiss the ongoing notification so no caller can orphan it (e.g.
+    // the timer dropping a stray session started for a different book).
+    void dismissSessionNotification(get().active?.notificationId);
     set({ active: null, finishRequested: false });
     persist(null);
   },

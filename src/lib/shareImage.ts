@@ -3,6 +3,7 @@ import type { View } from 'react-native';
 import { Image } from 'expo-image';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export type ShareImageResult = 'shared' | 'unavailable' | 'failed';
 
@@ -18,6 +19,7 @@ export async function shareViewAsImage(
   ref: RefObject<View | null>,
   opts: { dialogTitle?: string; preloadUrls?: (string | undefined)[] } = {}
 ): Promise<ShareImageResult> {
+  let uri: string | undefined;
   try {
     if (!ref.current) return 'failed';
 
@@ -33,7 +35,7 @@ export async function shareViewAsImage(
 
     if (!(await Sharing.isAvailableAsync())) return 'unavailable';
 
-    const uri = await captureRef(ref, { format: 'png', quality: 1 });
+    uri = await captureRef(ref, { format: 'png', quality: 1 });
     await Sharing.shareAsync(uri, {
       mimeType: 'image/png',
       dialogTitle: opts.dialogTitle ?? 'Tomo',
@@ -42,5 +44,9 @@ export async function shareViewAsImage(
     return 'shared';
   } catch {
     return 'failed';
+  } finally {
+    // captureRef writes a temp PNG to the cache; remove it so shares don't
+    // accumulate files over time.
+    if (uri) void FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
   }
 }

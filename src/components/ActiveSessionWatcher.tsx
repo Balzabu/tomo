@@ -87,7 +87,14 @@ export function ActiveSessionWatcher() {
   const onSaveRecovered = (draft: SessionDraft) => {
     const a = useActiveSession.getState().active;
     if (!a) return;
-    const startedAt = a.startedAt ?? draft.dayTs + 12 * 3600 * 1000;
+    // Keep the real start time-of-day, but honour a day change from the picker.
+    const orig = new Date(a.startedAt);
+    const tod =
+      orig.getHours() * 3600000 +
+      orig.getMinutes() * 60000 +
+      orig.getSeconds() * 1000 +
+      orig.getMilliseconds();
+    const startedAt = draft.dayTs + tod;
     const durationSeconds = draft.minutes * 60;
     const pagesRead =
       draft.startPage != null && draft.endPage != null
@@ -112,6 +119,7 @@ export function ActiveSessionWatcher() {
       title={tr('timer.recoverTitle')}
       defaultStartPage={book?.currentPage}
       defaultMinutes={estMinutes}
+      defaultDayTs={active?.startedAt}
       onClose={() => {
         setEditorVisible(false);
         discard(); // closing without saving drops the orphan

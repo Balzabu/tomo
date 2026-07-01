@@ -4,12 +4,13 @@ import * as FileSystem from 'expo-file-system/legacy';
 import type { ImageWidgetSource } from 'react-native-android-widget';
 import { AppData, Book } from '@/types';
 import { loadData } from '@/lib/storage';
+import { migrateLegacyKeys } from '@/lib/migrate';
 import { resolveScheme, SchemeChoice, Theme } from '@/theme/theme';
 import { Language } from '@/store/useSettings';
 import { Lang, resolveLang, translate } from '@/i18n';
 import { toDateKey } from '@/lib/utils';
 
-const SETTINGS_KEY = 'bootrack:settings:v2';
+const SETTINGS_KEY = 'tomo:settings:v2';
 const SCHEME = 'tomo';
 
 export type WidgetT = (key: string, params?: Record<string, string | number>) => string;
@@ -21,9 +22,17 @@ export interface WidgetContext {
   lang: Lang;
 }
 
-/** Read app data + settings from storage (works in the headless widget task). */
-export async function loadWidgetContext(): Promise<WidgetContext> {
-  const data = await loadData();
+/**
+ * Read app data + settings from storage (works in the headless widget task).
+ * Pass `preloaded` (the in-memory AppData) to skip the disk re-read when the
+ * foreground store already holds fresh data.
+ */
+export async function loadWidgetContext(preloaded?: AppData): Promise<WidgetContext> {
+  // Headless widget updates can run before the app is first opened after the
+  // update, so migrate the legacy storage keys here too (idempotent, no-op once
+  // done). When `preloaded` is passed, the app already migrated.
+  if (!preloaded) await migrateLegacyKeys();
+  const data = preloaded ?? (await loadData());
 
   let scheme: SchemeChoice = 'system';
   let language: Language = 'system';

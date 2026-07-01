@@ -33,7 +33,11 @@ export default function BookDetailScreen() {
   const { t: tr, lang } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const book = useBook(id);
-  const store = useStore();
+  // Actions have stable identity, so read them once (non-reactive) instead of
+  // subscribing the whole screen to every store change; subscribe only to the
+  // reactive slices we actually render below.
+  const store = useStore.getState();
+  const shelves = useStore((s) => s.shelves);
   const showSnackbar = useSnackbar((s) => s.show);
   // Select the raw arrays (stable refs) and filter in useMemo - a selector
   // that returns `.filter(...)` makes a new array every render and sends
@@ -47,6 +51,15 @@ export default function BookDetailScreen() {
   const notes = useMemo(
     () => allNotes.filter((x) => x.bookId === id),
     [allNotes, id]
+  );
+  // Sorted copies (never mutate the memoized arrays in place).
+  const notesSorted = useMemo(
+    () => notes.slice().sort((a, b) => (b.page ?? 0) - (a.page ?? 0)),
+    [notes]
+  );
+  const sessionsSorted = useMemo(
+    () => sessions.slice().sort((a, b) => b.startTime - a.startTime),
+    [sessions]
   );
 
   const [progressOpen, setProgressOpen] = useState(false);
@@ -87,7 +100,20 @@ export default function BookDetailScreen() {
       draft.startPage != null && draft.endPage != null
         ? Math.max(0, draft.endPage - draft.startPage)
         : 0;
-    const startTime = draft.dayTs + 12 * 3600 * 1000; // midday of the chosen day
+    // Keep the original time-of-day when editing (only the day is editable);
+    // new sessions default to midday of the chosen day.
+    let startTime: number;
+    if (existing) {
+      const orig = new Date(existing.startTime);
+      const tod =
+        orig.getHours() * 3600000 +
+        orig.getMinutes() * 60000 +
+        orig.getSeconds() * 1000 +
+        orig.getMilliseconds();
+      startTime = draft.dayTs + tod;
+    } else {
+      startTime = draft.dayTs + 12 * 3600 * 1000; // midday of the chosen day
+    }
     const durationSeconds = draft.minutes * 60;
     if (existing) {
       store.updateSession(existing.id, {
@@ -125,6 +151,25 @@ export default function BookDetailScreen() {
       : book.status === 'finished'
       ? 1
       : 0;
+
+  // Finished books start a fresh read cycle (with a confirm) so the reread is
+  // actually recorded; unfinished books go straight to the timer.
+  const startOrReread = () => {
+    if (book.status === 'finished') {
+      Alert.alert(tr('book.rereadTitle'), tr('book.rereadMsg'), [
+        { text: tr('common.cancel'), style: 'cancel' },
+        {
+          text: tr('book.reread'),
+          onPress: () => {
+            store.startReread(book.id);
+            router.push(`/timer/${book.id}`);
+          },
+        },
+      ]);
+    } else {
+      router.push(`/timer/${book.id}`);
+    }
+  };
 
   const confirmDelete = () => {
     Alert.alert(tr('book.deleteTitle'), tr('book.deleteMsg', { title: book.title }), [
@@ -212,7 +257,7 @@ export default function BookDetailScreen() {
         label={book.status === 'finished' ? tr('book.reread') : tr('book.startReading')}
         icon="play"
         full
-        onPress={() => router.push(`/timer/${book.id}`)}
+        onPress={startOrReread}
       />
 
       <Card style={{ gap: spacing.md }}>
@@ -287,13 +332,13 @@ export default function BookDetailScreen() {
 
       <Card style={{ gap: spacing.md }}>
         <SectionTitle>{tr('book.shelves')}</SectionTitle>
-        {store.shelves.length === 0 ? (
+        {shelves.length === 0 ? (
           <Text style={[styles.muted, { color: t.colors.textMuted }]}>
             {tr('book.shelvesEmpty')}
           </Text>
         ) : (
           <View style={styles.pills}>
-            {store.shelves.map((sh) => (
+            {shelves.map((sh) => (
               <Pill
                 key={sh.id}
                 label={sh.name}
@@ -349,16 +394,14 @@ export default function BookDetailScreen() {
             {tr('book.notesEmpty')}
           </Text>
         ) : (
-          notes
-            .sort((a, b) => (b.page ?? 0) - (a.page ?? 0))
-            .map((n) => (
-              <NoteItem
-                key={n.id}
-                note={n}
-                onDelete={() => store.deleteNote(n.id)}
-                onShare={() => setShareNote(n)}
-              />
-            ))
+          notesSorted.map((n) => (
+            <NoteItem
+              key={n.id}
+              note={n}
+              onDelete={() => store.deleteNote(n.id)}
+              onShare={() => setShareNote(n)}
+            />
+          ))
         )}
       </Card>
 
@@ -375,11 +418,8 @@ export default function BookDetailScreen() {
         {sessions.length === 0 ? (
           <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('book.historyEmpty')}</Text>
         ) : (
-          sessions
-            .slice()
-            .sort((a, b) => b.startTime - a.startTime)
-            .map((s) => (
-              <Pressable key={s.id} style={styles.sessionRow} onPress={() => setSessionEdit(s)}>
+          sessionsSorted.map((s) => (
+            <Pressable key={s.id} style={styles.sessionRow} onPress={() => setSessionEdit(s)}>
                 <Ionicons name="time-outline" size={18} color={t.colors.textFaint} />
                 <Text style={[styles.body, { color: t.colors.text, flex: 1 }]}>
                   {formatDate(s.startTime, lang)}

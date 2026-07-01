@@ -41,24 +41,43 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
 }
 
-/** Replace any existing daily reminder with one at the given local time. */
+/** Whether notifications are currently permitted (checks, never prompts). */
+export async function hasNotificationPermission(): Promise<boolean> {
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    return current.granted;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Replace any existing daily reminder with one at the given local time.
+ * Returns whether it was scheduled (false if the platform call threw), so the
+ * caller can reconcile the "reminder on" setting instead of silently failing.
+ */
 export async function scheduleDailyReminder(
   hour: number,
   minute: number,
   title: string,
   body: string
-): Promise<void> {
-  await ensureAndroidChannel();
-  await cancelReminders();
-  await Notifications.scheduleNotificationAsync({
-    content: { title, body },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour,
-      minute,
-      channelId: CHANNEL_ID,
-    },
-  });
+): Promise<boolean> {
+  try {
+    await ensureAndroidChannel();
+    await cancelReminders();
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+        channelId: CHANNEL_ID,
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Cancel the reading reminder (we only ever schedule this one). */

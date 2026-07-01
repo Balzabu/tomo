@@ -35,7 +35,12 @@ export default function RemindersSettings() {
         setReminder(false, h, m);
         return;
       }
-      await scheduleDailyReminder(h, m, tr('notif.title'), tr('notif.body'));
+      const scheduled = await scheduleDailyReminder(h, m, tr('notif.title'), tr('notif.body'));
+      if (!scheduled) {
+        Alert.alert(tr('settings.reminders'), tr('settings.reminderPermDenied'));
+        setReminder(false, h, m);
+        return;
+      }
     } else {
       await cancelReminders();
     }

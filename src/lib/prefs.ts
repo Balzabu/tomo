@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Lightweight key/value prefs kept separate from the main app data blob.
-const GOOGLE_KEY = 'bootrack:googleApiKey';
+const GOOGLE_KEY = 'tomo:googleApiKey';
 
 export async function loadGoogleApiKey(): Promise<string> {
   try {

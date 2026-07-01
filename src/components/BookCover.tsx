@@ -19,6 +19,9 @@ export function BookCover({ uri, title, width, height }: Props) {
     return (
       <Image
         source={{ uri }}
+        // recyclingKey avoids showing a previous row's cover while the new one
+        // loads when FlatList recycles this view.
+        recyclingKey={uri}
         style={{ width, height: h, borderRadius: radius.sm, backgroundColor: t.colors.cardAlt }}
         contentFit="cover"
         transition={200}

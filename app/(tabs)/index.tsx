@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -71,20 +71,36 @@ export default function LibraryScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const enterSelect = (id: string) => {
-    setSelectMode(true);
-    setSelected(new Set([id]));
-  };
-  const toggle = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
   const exitSelect = () => {
     setSelectMode(false);
     setSelected(new Set());
   };
+
+  // Stable row handlers so memoized BookRows don't all re-render while typing in
+  // the search box (their identity only changes when selection mode flips).
+  const handleRowPress = useCallback(
+    (id: string) => {
+      if (selectMode) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.has(id) ? next.delete(id) : next.add(id);
+          return next;
+        });
+      } else {
+        router.push(`/book/${id}`);
+      }
+    },
+    [selectMode]
+  );
+  const handleRowLongPress = useCallback(
+    (id: string) => {
+      if (!selectMode) {
+        setSelectMode(true);
+        setSelected(new Set([id]));
+      }
+    },
+    [selectMode]
+  );
 
   // Leave selection mode automatically once nothing is selected.
   useEffect(() => {
@@ -111,6 +127,28 @@ export default function LibraryScreen() {
     [books]
   );
 
+  // Precompute a lowercased search haystack per book once (per library / language
+  // change) instead of rebuilding it for every book on every keystroke.
+  const haystacks = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of books) {
+      m.set(
+        b.id,
+        [
+          b.title,
+          ...b.authors,
+          b.series ?? '',
+          ...(b.categories ?? []),
+          ...(b.moods ?? []).map((mo) => tr(`mood.${mo}`)),
+          b.pace ? tr(`pace.${b.pace}`) : '',
+        ]
+          .join(' ')
+          .toLowerCase()
+      );
+    }
+    return m;
+  }, [books, tr]);
+
   const filtered = useMemo(() => {
     let list = books;
     if (filter.kind === 'status') list = list.filter((b) => b.status === filter.status);
@@ -124,21 +162,9 @@ export default function LibraryScreen() {
     }
     const q = query.trim().toLowerCase();
     if (q) {
-      // broadened free-text search: title, authors, series, genres, + localised
-      // mood/pace labels so typing "cosy"/"slow" works too.
-      list = list.filter((b) => {
-        const hay = [
-          b.title,
-          ...b.authors,
-          b.series ?? '',
-          ...(b.categories ?? []),
-          ...(b.moods ?? []).map((m) => tr(`mood.${m}`)),
-          b.pace ? tr(`pace.${b.pace}`) : '',
-        ]
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(q);
-      });
+      // free-text over the precomputed haystack (title, authors, series, genres,
+      // + localised mood/pace labels so typing "cosy"/"slow" works too).
+      list = list.filter((b) => (haystacks.get(b.id) ?? '').includes(q));
     }
     const sorted = [...list];
     switch (sort) {
@@ -158,7 +184,7 @@ export default function LibraryScreen() {
         sorted.sort((a, b) => b.addedAt - a.addedAt);
     }
     return sorted;
-  }, [books, filter, query, sort, moodFilter, paceFilter, tr]);
+  }, [books, filter, query, sort, moodFilter, paceFilter, haystacks]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -175,6 +201,10 @@ export default function LibraryScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(b) => b.id}
+        removeClippedSubviews
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={11}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
         ListHeaderComponent={
           <View style={{ gap: spacing.lg, marginBottom: spacing.md }}>
@@ -278,8 +308,8 @@ export default function LibraryScreen() {
             book={item}
             selectionMode={selectMode}
             selected={selected.has(item.id)}
-            onPress={() => (selectMode ? toggle(item.id) : router.push(`/book/${item.id}`))}
-            onLongPress={() => !selectMode && enterSelect(item.id)}
+            onPress={handleRowPress}
+            onLongPress={handleRowLongPress}
           />
         )}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
