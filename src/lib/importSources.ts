@@ -39,6 +39,13 @@ function floatOrUndef(v?: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/** Star rating clamped to Tomo's 0-5 scale (the backup sanitizer does the
+ *  same; a hand-edited CSV must not produce a 45-star share card). */
+function ratingOrUndef(v?: string): number | undefined {
+  const n = floatOrUndef(v);
+  return n != null ? Math.min(5, n) : undefined;
+}
+
 function cleanIsbn(v?: string): string | undefined {
   if (!v) return undefined;
   // Goodreads wraps ISBNs as ="9781234567890"
@@ -100,6 +107,15 @@ function goodreadsStatus(shelf: string): ReadingStatus {
       return 'reading';
     case 'to-read':
       return 'want_to_read';
+    // Goodreads has no built-in DNF, so users make custom exclusive shelves
+    // with these names - don't dump their abandoned books back into to-read.
+    case 'dnf':
+    case 'did-not-finish':
+    case 'abandoned':
+      return 'dnf';
+    case 'on-hold':
+    case 'paused':
+      return 'paused';
     default:
       return 'want_to_read';
   }
@@ -112,7 +128,7 @@ function mapGoodreads(r: Record<string, string>): ImportedBook | null {
     .map((a) => a?.trim())
     .filter(Boolean) as string[];
   const status = goodreadsStatus(r['Exclusive Shelf'] ?? '');
-  const rating = floatOrUndef(r['My Rating']);
+  const rating = ratingOrUndef(r['My Rating']);
   const exclusive = new Set(['read', 'currently-reading', 'to-read']);
   const shelfNames = splitList(r['Bookshelves']).filter((s) => !exclusive.has(s.toLowerCase()));
   const review = (r['My Review'] ?? '').replace(/<br\s*\/?>/gi, '\n').trim() || undefined;
@@ -157,7 +173,7 @@ function mapStoryGraph(r: Record<string, string>): ImportedBook | null {
   if (!parsed.title) return null;
   const authors = splitList(r['Authors']);
   const status = storyGraphStatus(r['Read Status'] ?? '');
-  const rating = floatOrUndef(r['Star Rating']);
+  const rating = ratingOrUndef(r['Star Rating']);
   const review = (r['Review'] ?? '').trim() || undefined;
   const finished =
     parseDate(r['Last Date Read']) ?? parseDate((r['Dates Read'] ?? '').split('-').pop());

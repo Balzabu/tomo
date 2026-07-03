@@ -31,7 +31,9 @@ interface Persisted {
 }
 
 function persist(state: Persisted) {
-  void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch((e) =>
+    console.warn('Failed to persist settings', e)
+  );
 }
 
 export const useSettings = create<SettingsState>((set, get) => ({

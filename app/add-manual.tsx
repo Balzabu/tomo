@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -33,8 +33,13 @@ export default function AddManualScreen() {
   const [pace, setPace] = useState<ReadingPace | undefined>(undefined);
   const [moods, setMoods] = useState<string[]>([]);
 
+  // One-shot guard: two quick taps on Save would add the book twice (and pop
+  // two screens) - same idiom as the search StatusPicker.
+  const savedRef = useRef(false);
+
   const save = () => {
-    if (!title.trim()) return;
+    if (savedRef.current || !title.trim()) return;
+    savedRef.current = true;
     const pc = parseInt(pages, 10);
     const sn = parseFloat(seriesNumber);
     addManualBook({

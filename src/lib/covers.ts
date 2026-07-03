@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { uid } from '@/lib/utils';
 
 // Locally-stored custom covers live here so they survive app restarts.
@@ -56,8 +57,26 @@ export async function pickCover(): Promise<PickResult> {
   if (res.canceled || !res.assets?.[0]) return { status: 'canceled' };
 
   await ensureDir();
+  const asset = res.assets[0];
   const dest = `${COVERS_DIR}${uid('cov_')}.jpg`;
-  await FileSystem.copyAsync({ from: res.assets[0].uri, to: dest });
+  // Cap the stored size: a camera-roll crop is easily 12MP+, which bloats
+  // base64-embedded backups and makes the widget renderer decode a ~45MB
+  // bitmap just to scale it down to a 64dp thumbnail. ~600px wide is more
+  // than any in-app rendering uses.
+  const MAX_WIDTH = 600;
+  if (asset.width && asset.width > MAX_WIDTH) {
+    try {
+      const resized = await manipulateAsync(asset.uri, [{ resize: { width: MAX_WIDTH } }], {
+        compress: 0.85,
+        format: SaveFormat.JPEG,
+      });
+      await FileSystem.moveAsync({ from: resized.uri, to: dest });
+      return { status: 'ok', uri: dest };
+    } catch {
+      // resize is an optimisation - fall back to storing the original
+    }
+  }
+  await FileSystem.copyAsync({ from: asset.uri, to: dest });
   return { status: 'ok', uri: dest };
 }
 

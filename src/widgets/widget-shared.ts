@@ -72,17 +72,23 @@ export function link(path = ''): string {
   return `${SCHEME}:///${path}`;
 }
 
-/** Convert a cover url into something ImageWidget accepts (http(s) or data-uri). */
+/** Convert a cover url into something ImageWidget accepts. Local covers are
+ *  handed over as file:// URIs - the native renderer decodes those directly
+ *  (ResourceUtils.getBitmap), so no multi-MB base64 string has to be read,
+ *  encoded and pushed across the bridge on every single widget refresh. */
 export async function coverToWidgetImage(
   coverUrl?: string
 ): Promise<ImageWidgetSource | undefined> {
   if (!coverUrl) return undefined;
-  if (coverUrl.startsWith('http:') || coverUrl.startsWith('https:')) {
+  if (
+    coverUrl.startsWith('http:') ||
+    coverUrl.startsWith('https:') ||
+    coverUrl.startsWith('data:image') ||
+    coverUrl.startsWith('file:')
+  ) {
     return coverUrl as ImageWidgetSource;
   }
-  if (coverUrl.startsWith('data:image')) {
-    return coverUrl as ImageWidgetSource;
-  }
+  // Unknown scheme (defensive): fall back to embedding as a data-uri.
   try {
     const b64 = await FileSystem.readAsStringAsync(coverUrl, {
       encoding: FileSystem.EncodingType.Base64,

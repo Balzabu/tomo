@@ -1,14 +1,14 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, type Href } from 'expo-router';
+import { router, useFocusEffect, type Href } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation, localizedWeekdaysShort } from '@/i18n';
-import { buildHeatmap, computeInsights, computeStats, isWrappedAvailable, recentDailyPages } from '@/lib/stats';
+import { buildHeatmap, computeInsights, computeStats, latestWrappedYear, recentDailyPages } from '@/lib/stats';
 import { BarChart, Heatmap, StatTile } from '@/components/charts';
 import { Button, Card, EmptyState, SectionTitle } from '@/components/ui';
-import { dateKeyToDate, formatDuration } from '@/lib/utils';
+import { dateKeyToDate, formatDuration, toDateKey } from '@/lib/utils';
 
 export default function StatsScreen() {
   const t = useTheme();
@@ -16,14 +16,24 @@ export default function StatsScreen() {
   const books = useStore((s) => s.books);
   const sessions = useStore((s) => s.sessions);
 
-  const stats = useMemo(() => computeStats(books, sessions), [books, sessions]);
-  const insights = useMemo(() => computeInsights(books, sessions), [books, sessions]);
-  const heat = useMemo(() => buildHeatmap(sessions, 17), [sessions]);
+  // Every stat below is anchored to "today" (streak, heatmap window, weekly
+  // chart), but the app can sit in memory across midnight for days. Refresh
+  // the anchor on each tab focus so the memos can't serve yesterday's world.
+  const [todayKey, setTodayKey] = useState(() => toDateKey());
+  useFocusEffect(
+    useCallback(() => {
+      setTodayKey(toDateKey());
+    }, [])
+  );
+
+  const stats = useMemo(() => computeStats(books, sessions), [books, sessions, todayKey]);
+  const insights = useMemo(() => computeInsights(books, sessions), [books, sessions, todayKey]);
+  const heat = useMemo(() => buildHeatmap(sessions, 17), [sessions, todayKey]);
   const monthDelta = insights.pagesThisMonth - insights.pagesLastMonth;
   const monthTrend = monthDelta > 0 ? ` ↑${monthDelta}` : monthDelta < 0 ? ` ↓${-monthDelta}` : '';
   const wrappedReady = useMemo(
-    () => isWrappedAvailable(books, sessions, new Date().getFullYear()),
-    [books, sessions]
+    () => latestWrappedYear(books, sessions) != null,
+    [books, sessions, todayKey]
   );
   const weekData = useMemo(() => {
     const weekdays = localizedWeekdaysShort(lang);
@@ -33,7 +43,7 @@ export default function StatsScreen() {
       const dow = (dateKeyToDate(d.date).getDay() + 6) % 7;
       return { label: weekdays[dow], value: d.pages, sub: d.date };
     });
-  }, [sessions, lang]);
+  }, [sessions, lang, todayKey]);
 
   if (sessions.length === 0 && books.length === 0) {
     return (
@@ -118,7 +128,10 @@ export default function StatsScreen() {
         </View>
       </Card>
 
-      {insights.fastestBook || insights.topCategory || insights.pagesThisMonth > 0 ? (
+      {insights.fastestBook ||
+      insights.topCategory ||
+      insights.pagesThisMonth > 0 ||
+      insights.pagesLastMonth > 0 ? (
         <Card style={{ gap: spacing.sm }}>
           <SectionTitle>{tr('stats.insights')}</SectionTitle>
           {insights.pagesThisMonth > 0 || insights.pagesLastMonth > 0 ? (

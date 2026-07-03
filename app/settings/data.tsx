@@ -97,7 +97,7 @@ export default function DataSettings() {
     for (const b of targets) {
       if (enrichCancelled.current) break;
       try {
-        const found = await lookupByIsbn(b.isbn!);
+        const { result: found } = await lookupByIsbn(b.isbn!);
         if (found?.pageCount) {
           // A finished book imported without page data (e.g. StoryGraph) sits at
           // currentPage 0; once we learn the page count, mark it fully read.

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -36,6 +36,9 @@ export default function EditBookScreen() {
   );
   const [pace, setPace] = useState<ReadingPace | undefined>(book?.pace);
   const [moods, setMoods] = useState<string[]>(book?.moods ?? []);
+  // One-shot guard: a second quick tap on Save would fire router.back() twice
+  // and pop the book-detail screen under this modal too.
+  const savedRef = useRef(false);
 
   if (!book) {
     return (
@@ -46,7 +49,8 @@ export default function EditBookScreen() {
   }
 
   const save = () => {
-    if (!title.trim()) return;
+    if (savedRef.current || !title.trim()) return;
+    savedRef.current = true;
     const pc = parseInt(pages, 10);
     const sn = parseFloat(seriesNumber);
     updateBook(book.id, {

@@ -134,6 +134,11 @@ export async function showSessionNotification(
       },
     ]);
     return await Notifications.scheduleNotificationAsync({
+      // Deterministic id: a re-post for the same book *replaces* the previous
+      // notification instead of stacking a second, un-swipeable one that
+      // nothing tracks (e.g. back out of the timer while the first post is
+      // still in flight, then immediately restart it).
+      identifier: `session-${bookId}`,
       content: {
         title: text.title,
         body: text.body,

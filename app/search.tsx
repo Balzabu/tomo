@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Pressable,
   StyleSheet,
@@ -17,7 +18,8 @@ import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { BookCover } from '@/components/BookCover';
 import { EmptyState } from '@/components/ui';
-import { useStore } from '@/store/useStore';
+import { findExistingBook, useStore } from '@/store/useStore';
+import { useSnackbar } from '@/store/useSnackbar';
 
 export default function SearchScreen() {
   const t = useTheme();
@@ -26,6 +28,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BookSearchResult[]>([]);
   const [searched, setSearched] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [picker, setPicker] = useState<BookSearchResult | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqId = useRef(0);
@@ -50,7 +53,8 @@ export default function SearchScreen() {
       // Ignore a stale response (newer search) or one that resolved after the
       // screen was dismissed.
       if (myId !== reqId.current || !mountedRef.current) return;
-      setResults(r);
+      setResults(r.results);
+      setOffline(r.offline);
       setSearched(true);
       setLoading(false);
     }, 450);
@@ -84,7 +88,12 @@ export default function SearchScreen() {
 
       <FlatList
         data={results}
-        keyExtractor={(item, i) => item.isbn ?? `${item.title}-${item.authors[0] ?? ''}-${i}`}
+        // The index is always part of the key: sources can return two entries
+        // with the same ISBN but different titles (subtitle variants), and
+        // duplicate keys make FlatList recycle the wrong rows.
+        keyExtractor={(item, i) =>
+          item.isbn ? `${item.isbn}-${i}` : `${item.title}-${item.authors[0] ?? ''}-${i}`
+        }
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, gap: spacing.sm }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
@@ -113,7 +122,10 @@ export default function SearchScreen() {
           </Pressable>
         )}
         ListEmptyComponent={
-          loading ? null : searched ? (
+          loading ? null : searched && offline ? (
+            // Airplane mode / no network is not "this book doesn't exist".
+            <EmptyState icon="cloud-offline-outline" title={tr('search.offline')} subtitle={tr('search.offlineSub')} />
+          ) : searched ? (
             <EmptyState icon="sad-outline" title={tr('search.noResults')} subtitle={tr('search.noResultsSub')} />
           ) : (
             <EmptyState
@@ -149,11 +161,38 @@ function StatusPicker({
   useEffect(() => {
     chosenRef.current = false;
   }, [item]);
+
+  // Android hardware back while the sheet is open should close the sheet, not
+  // pop the whole search screen (this is a plain overlay, not a Modal, so the
+  // OS knows nothing about it).
+  useEffect(() => {
+    if (!item) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [item, onClose]);
+
   if (!item) return null;
 
   const choose = (status: ReadingStatus) => {
     if (chosenRef.current) return;
     chosenRef.current = true;
+    // Already in the library (scanned or added before, possibly as another
+    // edition): warn instead of silently duplicating, but keep "add anyway"
+    // one tap away.
+    const existing = findExistingBook(useStore.getState().books, item);
+    if (existing) {
+      onClose();
+      useSnackbar.getState().show(tr('search.inLibrary', { title: item.title }), {
+        actionLabel: tr('search.addAnyway'),
+        onAction: () => {
+          addBook(item, status);
+        },
+      });
+      return;
+    }
     addBook(item, status);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();

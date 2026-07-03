@@ -21,7 +21,6 @@ import { BookRow } from '@/components/BookRow';
 import { BookCover } from '@/components/BookCover';
 import { Button, EmptyState, Pill, ProgressBar } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
-import { deleteCoverFile } from '@/lib/covers';
 
 type Filter = { kind: 'all' } | { kind: 'status'; status: ReadingStatus } | { kind: 'shelf'; id: string };
 type Sort = 'recent' | 'title' | 'author' | 'rating' | 'progress';
@@ -117,7 +116,9 @@ export default function LibraryScreen() {
       {
         actionLabel: tr('common.undo'),
         onAction: () => restoreBooks(removed),
-        onDismiss: () => removed.books.forEach((b) => void deleteCoverFile(b.coverUrl)),
+        // Cover files are NOT deleted here: the delete may still be un-persisted
+        // (or undone), and launch-time reconcileCovers already reclaims files no
+        // longer referenced by the *saved* data - the only source of truth.
       }
     );
   };

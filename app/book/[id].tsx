@@ -17,7 +17,6 @@ import { BookNote, STATUS_ORDER } from '@/types';
 import { BookShareModal } from '@/components/BookShareModal';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation, formatDate } from '@/i18n';
-import { deleteCoverFile } from '@/lib/covers';
 import { BookCover } from '@/components/BookCover';
 import { Button, Card, Pill, ProgressBar, SectionTitle } from '@/components/ui';
 import { RatingStars } from '@/components/RatingStars';
@@ -101,18 +100,20 @@ export default function BookDetailScreen() {
         ? Math.max(0, draft.endPage - draft.startPage)
         : 0;
     // Keep the original time-of-day when editing (only the day is editable);
-    // new sessions default to midday of the chosen day.
+    // new sessions default to midday of the chosen day. Rebuilt via calendar
+    // APIs, not `dayTs + fixed offset`: on a DST-transition day (23h/25h) a
+    // millisecond offset from midnight lands on the wrong wall-clock hour -
+    // or even the wrong day.
     let startTime: number;
     if (existing) {
       const orig = new Date(existing.startTime);
-      const tod =
-        orig.getHours() * 3600000 +
-        orig.getMinutes() * 60000 +
-        orig.getSeconds() * 1000 +
-        orig.getMilliseconds();
-      startTime = draft.dayTs + tod;
+      const d = new Date(draft.dayTs);
+      d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+      startTime = d.getTime();
     } else {
-      startTime = draft.dayTs + 12 * 3600 * 1000; // midday of the chosen day
+      const d = new Date(draft.dayTs);
+      d.setHours(12, 0, 0, 0); // midday of the chosen day
+      startTime = d.getTime();
     }
     const durationSeconds = draft.minutes * 60;
     if (existing) {
@@ -196,8 +197,9 @@ export default function BookDetailScreen() {
           showSnackbar(tr('book.deletedOne'), {
             actionLabel: tr('common.undo'),
             onAction: () => store.restoreBooks(removed),
-            // only drop the cover files once the undo window has passed
-            onDismiss: () => removed.books.forEach((b) => void deleteCoverFile(b.coverUrl)),
+            // Cover files are NOT deleted here: the delete may still be
+            // un-persisted (or undone), and launch-time reconcileCovers
+            // reclaims files no longer referenced by the saved data.
           });
         },
       },

@@ -84,9 +84,18 @@ function snapshot(get: () => StoreState): AppData {
 // in-memory state is fine, but nothing since the last successful write would
 // survive a restart.
 function notifyPersistFailure(): void {
+  const snack = useSnackbar.getState();
+  // Never replace an action snackbar (e.g. delete-undo): stealing it would
+  // take the Undo button away mid-window and fire its dismiss cleanup early.
+  // The write stays pending, so a later failure re-notifies.
+  if (snack.message != null && snack.actionLabel) return;
   const lang = resolveLang(useSettings.getState().language);
-  useSnackbar.getState().show(translate(lang, 'data.saveFailed'));
+  snack.show(translate(lang, 'data.saveFailed'));
 }
+
+// Monotonic flush id: a failed older flush must not re-arm the pending marker
+// or alarm the user when a newer flush has already taken over.
+let flushSeq = 0;
 
 function flushPersist(): void {
   if (persistTimer) {
@@ -99,13 +108,26 @@ function flushPersist(): void {
   // Clear the pending marker so an unchanged store isn't re-serialised (and all
   // widgets re-rendered) on every subsequent app backgrounding.
   latestGet = null;
+  const seq = ++flushSeq;
   void saveData(data).then((ok) => {
     if (ok) return refreshWidgets(data);
+    if (seq !== flushSeq) return; // a newer flush reports its own outcome
     // Keep the write pending so the next mutation/backgrounding retries it,
     // unless a newer mutation already re-armed it.
     latestGet = latestGet ?? get;
     notifyPersistFailure();
   });
+}
+
+// Drop any queued incremental write (timer *and* pending marker) - used when a
+// full replace is about to supersede it, so a stray flush can't resurrect the
+// old dataset in the middle of a restore or clear-all.
+function cancelPendingPersist(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  latestGet = null;
 }
 
 function persist(get: () => StoreState) {
@@ -131,17 +153,19 @@ export const useStore = create<StoreState>((set, get) => ({
 
   replaceAll: async (data) => {
     // A full replace supersedes any queued incremental write.
-    if (persistTimer) {
-      clearTimeout(persistTimer);
-      persistTimer = null;
-    }
+    cancelPendingPersist();
+    const prev = snapshot(get);
     const next: AppData = { ...emptyData, ...data };
     set(next);
-    const ok = await saveData(next);
+    const ok = await saveData(next, { force: true });
+    if (!ok) {
+      // Roll the memory back so UI, disk and widgets keep agreeing - a
+      // "failed" import must not stay live on screen and then get silently
+      // committed by the next successful incremental write.
+      set(prev);
+      throw new Error(PERSIST_FAILED);
+    }
     void refreshWidgets(next);
-    // Let the caller (backup import / clear data) surface the failure instead
-    // of reporting success for a restore that won't survive a restart.
-    if (!ok) throw new Error(PERSIST_FAILED);
   },
 
   addBook: (result, status = 'want_to_read') => {
@@ -414,7 +438,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const session: ReadingSession = {
       ...input,
       id: uid('s_'),
-      date: toDateKey(input.startTime),
+      // Day-bucket on the END time: a session crossing midnight belongs to the
+      // day you were reading at 00:30, so today's goals/streak credit it
+      // immediately instead of assigning it to a yesterday the UI never
+      // revisits. (For same-day sessions the two are identical.)
+      date: toDateKey(input.endTime ?? input.startTime),
     };
     set((s) => ({ sessions: [session, ...s.sessions] }));
     // advance reading progress if the session recorded an end page - but only
@@ -434,7 +462,11 @@ export const useStore = create<StoreState>((set, get) => ({
       sessions: s.sessions.map((x) => {
         if (x.id !== id) return x;
         const next = { ...x, ...patch };
-        if (patch.startTime != null) next.date = toDateKey(patch.startTime);
+        // Keep the day bucket in sync with the (possibly edited) times - end
+        // time wins, matching addSession.
+        if (patch.startTime != null || patch.endTime != null) {
+          next.date = toDateKey(next.endTime ?? next.startTime);
+        }
         return next;
       }),
     }));
@@ -547,4 +579,22 @@ export const useStore = create<StoreState>((set, get) => ({
 // Selectors / helpers
 export function useBook(id: string | undefined): Book | undefined {
   return useStore((s) => s.books.find((b) => b.id === id));
+}
+
+/**
+ * Find a library book matching a search/scan result - by ISBN first, then by
+ * title|first-author (same matching the CSV import uses). Lets add flows warn
+ * about a duplicate instead of silently creating a second copy.
+ */
+export function findExistingBook(
+  books: Book[],
+  b: { isbn?: string; title: string; authors?: string[] }
+): Book | undefined {
+  const titleKey = `${b.title.trim().toLowerCase()}|${(b.authors?.[0] ?? '').trim().toLowerCase()}`;
+  return books.find((x) => {
+    if (b.isbn && x.isbn && x.isbn === b.isbn) return true;
+    return (
+      `${x.title.trim().toLowerCase()}|${(x.authors[0] ?? '').trim().toLowerCase()}` === titleKey
+    );
+  });
 }

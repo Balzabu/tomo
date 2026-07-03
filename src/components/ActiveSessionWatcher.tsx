@@ -88,13 +88,12 @@ export function ActiveSessionWatcher() {
     const a = useActiveSession.getState().active;
     if (!a) return;
     // Keep the real start time-of-day, but honour a day change from the picker.
+    // Rebuilt via calendar APIs, not `dayTs + fixed offset`: on a DST-transition
+    // day a millisecond offset from midnight lands on the wrong wall-clock hour.
     const orig = new Date(a.startedAt);
-    const tod =
-      orig.getHours() * 3600000 +
-      orig.getMinutes() * 60000 +
-      orig.getSeconds() * 1000 +
-      orig.getMilliseconds();
-    const startedAt = draft.dayTs + tod;
+    const d = new Date(draft.dayTs);
+    d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+    const startedAt = d.getTime();
     const durationSeconds = draft.minutes * 60;
     const pagesRead =
       draft.startPage != null && draft.endPage != null

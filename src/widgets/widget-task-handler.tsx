@@ -2,6 +2,8 @@ import React from 'react';
 import type { WidgetTaskHandlerProps } from 'react-native-android-widget';
 import { computeStats, buildHeatmap, computeGoalProgress } from '@/lib/stats';
 import { monthsShort, weekdayInitials } from '@/i18n/strings';
+import { migrateLegacyKeys } from '@/lib/migrate';
+import { toDateKey } from '@/lib/utils';
 import {
   bookTotalSeconds,
   coverToWidgetImage,
@@ -106,7 +108,12 @@ export async function renderForName(
       const monthOf = (key?: string) =>
         key ? months[Number(key.split('-')[1]) - 1] ?? '' : '';
       const first = monthOf(cells[0]?.date);
-      const last = monthOf(cells[cells.length - 1]?.date);
+      // The grid is padded to the end of the current week, so the last cell
+      // can be up to 6 days in the future - label with today's month instead
+      // of advertising a month that hasn't started yet.
+      const todayKey = toDateKey();
+      const lastShown = cells.filter((c) => c.date <= todayKey).pop() ?? cells[cells.length - 1];
+      const last = monthOf(lastShown?.date);
       const monthRange = first && last ? (first === last ? first : `${first} – ${last}`) : '';
 
       return (
@@ -152,7 +159,14 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<
       break;
     }
     case 'WIDGET_DELETED': {
-      if (name === 'CurrentlyReading') await removeReadingSelection(widgetId);
+      if (name === 'CurrentlyReading') {
+        // The only handler branch that skips loadWidgetContext (where the
+        // legacy-key migration normally runs): migrate first, or a
+        // pre-migration delete would no-op on the new key and the entry
+        // would be resurrected when the old map is migrated later.
+        await migrateLegacyKeys();
+        await removeReadingSelection(widgetId);
+      }
       break;
     }
     default:

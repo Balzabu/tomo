@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +16,16 @@ export function BookCover({ uri, title, width, height }: Props) {
   const h = height ?? Math.round(width * 1.5);
   const fontSize = Math.max(10, Math.round(width / 7));
 
-  if (uri) {
+  // A cover URL that fails to load (404 from Open Library's default=false,
+  // dangling local file, dead link) falls back to the title placeholder
+  // instead of an empty rectangle. Reset when the row is recycled onto a
+  // different uri.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+
+  if (uri && !failed) {
     return (
       <Image
         source={{ uri }}
@@ -25,6 +35,7 @@ export function BookCover({ uri, title, width, height }: Props) {
         style={{ width, height: h, borderRadius: radius.sm, backgroundColor: t.colors.cardAlt }}
         contentFit="cover"
         transition={200}
+        onError={() => setFailed(true)}
       />
     );
   }

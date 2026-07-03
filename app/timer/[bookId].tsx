@@ -41,7 +41,7 @@ export default function TimerScreen() {
   const [, force] = useState(0); // drives the per-tick clock re-render
   const savingRef = useRef(false); // guards against a double "Save" tap
   const allowLeaveRef = useRef(false); // set when leaving intentionally (save/cancel)
-  const initRef = useRef(false); // one-shot session bootstrap guard
+  const initRef = useRef<string | null>(null); // bookId the bootstrap ran for
   const navigation = useNavigation();
 
   // Elapsed is derived from the persisted session (wall-clock based), so it is
@@ -68,13 +68,26 @@ export default function TimerScreen() {
   const [startPage, setStartPage] = useState(String(book?.currentPage ?? 0));
   const [endPage, setEndPage] = useState(String(book?.currentPage ?? 0));
 
-  // Bootstrap the session once: adopt an existing one for this book, or start a
-  // fresh one (and post the ongoing notification). A stale deep link (widget or
-  // notification pointing at a deleted book) must not start a ghost session, so
-  // nothing happens until the book resolves.
+  // Bootstrap the session per book: adopt an existing one for this book, or
+  // start a fresh one (and post the ongoing notification). A stale deep link
+  // (widget or notification pointing at a deleted book) must not start a ghost
+  // session, so nothing happens until the book resolves. Keyed by bookId, not
+  // one-shot: a deep link while this screen is mounted swaps the route params
+  // in place (React Navigation reuses the route), and skipping the re-run
+  // would leave the old book's session on the clock - and record its time
+  // against the new book on save.
+  const sessionHydrated = useActiveSession((s) => s.hydrated);
   useEffect(() => {
-    if (initRef.current || !book) return;
-    initRef.current = true;
+    if (initRef.current === bookId || !book || !sessionHydrated) return;
+    const swapped = initRef.current != null;
+    initRef.current = bookId;
+    if (swapped) {
+      // Reset the per-book UI state before bootstrapping the new session.
+      savingRef.current = false;
+      setPhase(finish === '1' ? 'finish' : 'timing');
+      setStartPage(String(book.currentPage));
+      setEndPage(String(book.currentPage));
+    }
     const s = useActiveSession.getState();
     const a = s.active;
     if (a && a.bookId === bookId) {
@@ -125,7 +138,7 @@ export default function TimerScreen() {
       }
       useActiveSession.getState().setNotificationId(id);
     })();
-  }, [bookId, finish, book, tr]);
+  }, [bookId, finish, book, tr, sessionHydrated]);
 
   // A "Finish" tap on the notification while the timer is already mounted: jump
   // to the finish screen instead of stacking a second timer.
@@ -142,10 +155,15 @@ export default function TimerScreen() {
   // session got (the heartbeat is throttled to keep disk writes rare).
   useEffect(() => {
     const id = setInterval(() => {
-      force((n) => (n + 1) % 1_000_000);
       const s = useActiveSession.getState();
       const a = s.active;
-      if (a?.runningSince != null && Date.now() - a.lastTick > 15_000) s.tick();
+      // Only re-render while the clock is actually advancing - a paused timer
+      // (or the finish form, where the session is frozen) shows a static time,
+      // and 4 forced renders/sec would just compete with typing.
+      if (a?.runningSince != null) {
+        force((n) => (n + 1) % 1_000_000);
+        if (Date.now() - a.lastTick > 15_000) s.tick();
+      }
     }, 250);
     return () => clearInterval(id);
   }, []);

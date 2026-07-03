@@ -9,9 +9,13 @@ import { base64ToCover, coverToBase64, isLocalCover } from '@/lib/covers';
 // Import sanitisation: never trust a hand-edited backup file.
 
 const VALID_STATUS: ReadingStatus[] = ['want_to_read', 'reading', 'finished', 'paused', 'dnf'];
+const VALID_SOURCES: Book['source'][] = ['google', 'openlibrary', 'manual', 'import'];
 
 function asString(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
+}
+function asOptionalString(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined;
 }
 function asNumber(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -37,19 +41,34 @@ function sanitizeBook(raw: unknown): Book | null {
     typeof r.rating === 'number' && Number.isFinite(r.rating)
       ? Math.max(0, Math.min(5, r.rating))
       : undefined;
+  // Build the book from validated fields only - spreading the raw object would
+  // let any unchecked field through with any JSON type (e.g. a numeric
+  // coverUrl, which breaks isLocalCover on every future export, or an object
+  // review that crashes the <Text> rendering it).
   return {
-    ...(r as object),
     id,
     title,
     authors: asStringArray(r.authors),
+    coverUrl: asOptionalString(r.coverUrl),
+    isbn: asOptionalString(r.isbn),
+    pageCount,
+    description: asOptionalString(r.description),
+    publisher: asOptionalString(r.publisher),
+    publishedDate: asOptionalString(r.publishedDate),
+    categories: Array.isArray(r.categories) ? asStringArray(r.categories) : undefined,
+    language: asOptionalString(r.language),
     status: VALID_STATUS.includes(r.status as ReadingStatus)
       ? (r.status as ReadingStatus)
       : 'want_to_read',
     // clamp progress into the valid range and coerce the untrusted date/rating
     // fields so a hand-edited backup can't poison stats with NaN/strings.
     currentPage: pageCount ? Math.min(currentPage, pageCount) : currentPage,
-    pageCount,
     rating,
+    review: asOptionalString(r.review),
+    series: asOptionalString(r.series),
+    seriesNumber: asOptionalNumber(r.seriesNumber),
+    moods: Array.isArray(r.moods) ? asStringArray(r.moods) : undefined,
+    pace: r.pace === 'slow' || r.pace === 'medium' || r.pace === 'fast' ? r.pace : undefined,
     addedAt: asNumber(r.addedAt, Date.now()),
     startedAt: asOptionalNumber(r.startedAt),
     finishedAt: asOptionalNumber(r.finishedAt),
@@ -58,8 +77,10 @@ function sanitizeBook(raw: unknown): Book | null {
         ? Math.max(0, Math.floor(r.readCount))
         : undefined,
     shelfIds: asStringArray(r.shelfIds),
-    source: (r.source as Book['source']) ?? 'manual',
-  } as Book;
+    source: VALID_SOURCES.includes(r.source as Book['source'])
+      ? (r.source as Book['source'])
+      : 'manual',
+  };
 }
 
 function sanitizeSession(raw: unknown): ReadingSession | null {
@@ -79,16 +100,19 @@ function sanitizeSession(raw: unknown): ReadingSession | null {
     ? toDateKey(startTime)
     : null;
   if (!date) return null;
+  // Validated fields only - see sanitizeBook for why the raw spread is unsafe.
   return {
-    ...(r as object),
     id,
     bookId,
     startTime,
     endTime: asNumber(r.endTime),
     durationSeconds: Math.max(0, asNumber(r.durationSeconds)),
+    startPage: asOptionalNumber(r.startPage),
+    endPage: asOptionalNumber(r.endPage),
     pagesRead: Math.max(0, asNumber(r.pagesRead)),
+    note: asOptionalString(r.note),
     date,
-  } as ReadingSession;
+  };
 }
 
 function sanitizeShelf(raw: unknown): Shelf | null {
@@ -97,12 +121,15 @@ function sanitizeShelf(raw: unknown): Shelf | null {
   const id = asString(r.id);
   const name = asString(r.name);
   if (!id || !name) return null;
+  // Validated fields only - see sanitizeBook for why the raw spread is unsafe.
   return {
-    ...(r as object),
     id,
     name,
     color: asString(r.color, '#7c5cff'),
-  } as Shelf;
+    icon: asOptionalString(r.icon),
+    emoji: asOptionalString(r.emoji),
+    createdAt: asNumber(r.createdAt, Date.now()),
+  };
 }
 
 const VALID_GOAL_TYPES: GoalType[] = ['books_per_year', 'pages_per_day', 'minutes_per_day'];
@@ -159,8 +186,18 @@ interface BackupFile extends AppData {
   _covers?: Record<string, string>;
 }
 
+// The previous backup is deleted on the *next* export rather than as soon as
+// the share sheet resolves: on Android the receiving app (Drive, Gmail) may
+// still be reading the URI at that point, and an immediate delete hands it a
+// missing file. Same pattern as shareImage.ts.
+let lastBackupUri: string | null = null;
+
 /** Write the full app data (with embedded local covers) and open the share sheet. */
 export async function exportData(data: AppData, dialogTitle: string): Promise<boolean> {
+  if (lastBackupUri) {
+    await FileSystem.deleteAsync(lastBackupUri, { idempotent: true }).catch(() => {});
+    lastBackupUri = null;
+  }
   const covers: Record<string, string> = {};
   for (const b of data.books) {
     if (isLocalCover(b.coverUrl)) {
@@ -177,31 +214,37 @@ export async function exportData(data: AppData, dialogTitle: string): Promise<bo
   await FileSystem.writeAsStringAsync(fileUri, json, {
     encoding: FileSystem.EncodingType.UTF8,
   });
-  try {
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'application/json',
-        dialogTitle,
-        UTI: 'public.json',
-      });
-      return true;
-    }
-    return false;
-  } finally {
-    // Don't leave backup copies accumulating in the cache directory.
-    await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+  lastBackupUri = fileUri;
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(fileUri, {
+      mimeType: 'application/json',
+      dialogTitle,
+      UTI: 'public.json',
+    });
+    return true;
   }
+  return false;
 }
 
 /** Let the user pick a JSON backup file, parse it, and restore embedded covers. */
 export async function importData(): Promise<AppData | null> {
+  // Android's MediaStore often records .json files received via messaging or
+  // downloads as application/octet-stream; a strict filter would grey out the
+  // user's own backup. The parse/sanitize layer below rejects anything else.
   const res = await DocumentPicker.getDocumentAsync({
-    type: 'application/json',
+    type: ['application/json', 'application/octet-stream', 'text/plain', '*/*'],
     copyToCacheDirectory: true,
   });
   if (res.canceled || !res.assets?.[0]) return null;
   const asset = res.assets[0];
-  if (asset.size != null && asset.size > MAX_BACKUP_BYTES) {
+  // SAF content URIs can report no size - stat the copied cache file instead
+  // of skipping the guard entirely.
+  let size = asset.size;
+  if (size == null) {
+    const info = await FileSystem.getInfoAsync(asset.uri);
+    size = info.exists ? info.size : undefined;
+  }
+  if (size != null && size > MAX_BACKUP_BYTES) {
     throw new Error(INVALID_BACKUP);
   }
   const content = await FileSystem.readAsStringAsync(asset.uri, {

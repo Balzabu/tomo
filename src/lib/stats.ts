@@ -27,7 +27,14 @@ export function computeStats(
     (b) => b.finishedAt && new Date(b.finishedAt).getFullYear() === year
   ).length;
 
-  const hours = totalSeconds / 3600;
+  // The rate only counts sessions where pages were actually logged: a timed
+  // session saved without page numbers would put its hours in the denominator
+  // with nothing in the numerator, deflating pages/hour for everyone.
+  const pagedSeconds = sessions.reduce(
+    (s, x) => s + ((x.pagesRead || 0) > 0 ? x.durationSeconds : 0),
+    0
+  );
+  const hours = pagedSeconds / 3600;
   const avgPagesPerHour = hours > 0 ? totalPagesRead / hours : 0;
 
   const { current, longest } = computeStreaks(sessions);
@@ -155,14 +162,17 @@ export function estimateRemaining(
   const pagesLeft = book.pageCount - book.currentPage;
   if (pagesLeft <= 0) return null;
 
+  // Pace only counts sessions with pages logged - see computeStats.
+  const pagedSeconds = (list: ReadingSession[]) =>
+    list.reduce((sum, s) => sum + ((s.pagesRead || 0) > 0 ? s.durationSeconds : 0), 0);
   const bookSessions = sessions.filter((s) => s.bookId === book.id);
   let pages = bookSessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
-  let seconds = bookSessions.reduce((sum, s) => sum + s.durationSeconds, 0);
+  let seconds = pagedSeconds(bookSessions);
 
   // fall back to global pace if this book has too little data
   if (pages < 5 || seconds < 60) {
     pages = sessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
-    seconds = sessions.reduce((sum, s) => sum + s.durationSeconds, 0);
+    seconds = pagedSeconds(sessions);
   }
   if (pages < 5 || seconds < 60) return null;
 
@@ -264,6 +274,18 @@ export function isWrappedAvailable(
   ).length;
   const sessionsThisYear = sessions.filter((s) => s.date.startsWith(prefix)).length;
   return finishedThisYear >= 3 || sessionsThisYear >= 15;
+}
+
+/**
+ * The most recent year with an available wrapped: this year, or last year as a
+ * fallback. Keeps last year's summary reachable in January - the moment users
+ * most want it - instead of it vanishing at midnight on Dec 31.
+ */
+export function latestWrappedYear(books: Book[], sessions: ReadingSession[]): number | null {
+  const year = new Date().getFullYear();
+  if (isWrappedAvailable(books, sessions, year)) return year;
+  if (isWrappedAvailable(books, sessions, year - 1)) return year - 1;
+  return null;
 }
 
 /** Aggregate a year's reading into a shareable "wrapped" summary. */

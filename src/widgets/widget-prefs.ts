@@ -11,6 +11,17 @@ const READING_SEL_KEY = 'tomo:widget:reading-selection:v1';
 
 type SelectionMap = Record<string, string>;
 
+// Widget events run as independent WorkManager jobs whose JS handlers
+// interleave at every await; two concurrent read-modify-writes of the map
+// would clobber each other (a deleted entry resurrected, a double cycle-tap
+// advancing by one). Serialise every mutation through a promise chain.
+let queue: Promise<unknown> = Promise.resolve();
+function enqueue<T>(op: () => Promise<T>): Promise<T> {
+  const next = queue.then(op, op);
+  queue = next.catch(() => {});
+  return next;
+}
+
 async function readMap(): Promise<SelectionMap> {
   try {
     const raw = await AsyncStorage.getItem(READING_SEL_KEY);
@@ -36,15 +47,31 @@ export async function getReadingSelection(widgetId: number): Promise<string | un
 
 /** Pin a book to a given "Currently reading" widget instance. */
 export async function setReadingSelection(widgetId: number, bookId: string): Promise<void> {
-  const map = await readMap();
-  map[String(widgetId)] = bookId;
-  await writeMap(map);
+  await enqueue(async () => {
+    const map = await readMap();
+    map[String(widgetId)] = bookId;
+    await writeMap(map);
+  });
 }
 
 /** Drop the selection of a removed widget instance so the map doesn't grow forever. */
 export async function removeReadingSelection(widgetId: number): Promise<void> {
-  const map = await readMap();
-  if (!(String(widgetId) in map)) return;
-  delete map[String(widgetId)];
-  await writeMap(map);
+  await enqueue(async () => {
+    const map = await readMap();
+    if (!(String(widgetId) in map)) return;
+    delete map[String(widgetId)];
+    await writeMap(map);
+  });
+}
+
+/** Wipe every widget selection - used by "clear all data" so the map doesn't
+ *  keep book ids from a wiped library. */
+export async function clearReadingSelections(): Promise<void> {
+  await enqueue(async () => {
+    try {
+      await AsyncStorage.removeItem(READING_SEL_KEY);
+    } catch {
+      // best-effort
+    }
+  });
 }

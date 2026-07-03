@@ -98,6 +98,12 @@ interface FetchResult<T> {
   data: T | null;
 }
 
+// Bumped whenever a fetch fails at the network layer (timeout, DNS, airplane
+// mode). Callers compare against their start time to tell "the catalogs have
+// no such book" apart from "the catalogs were unreachable" - showing a user
+// with no connection a sad "no results" actively misleads them.
+let lastNetworkFailureAt = 0;
+
 /** fetch JSON with a timeout; never throws - returns status + parsed body. */
 async function getJson<T>(url: string): Promise<FetchResult<T>> {
   const controller = new AbortController();
@@ -112,6 +118,7 @@ async function getJson<T>(url: string): Promise<FetchResult<T>> {
     return { status: res.status, data: (await res.json()) as T };
   } catch (e) {
     console.warn(`getJson failed for ${redactUrl(url)}:`, String(e));
+    lastNetworkFailureAt = Date.now();
     return { status: 0, data: null };
   } finally {
     clearTimeout(timeout);
@@ -267,7 +274,10 @@ function olCoverFromId(id?: number): string | undefined {
 }
 
 function olCoverFromIsbn(isbn?: string): string | undefined {
-  return isbn ? `${OPENLIB_COVERS}/b/isbn/${isbn}-L.jpg` : undefined;
+  // default=false: Open Library then 404s for a missing cover instead of
+  // serving a blank 200 image - the image loader's error path can fall back
+  // to the title placeholder rather than storing a permanently blank cover.
+  return isbn ? `${OPENLIB_COVERS}/b/isbn/${isbn}-L.jpg?default=false` : undefined;
 }
 
 function mapOLDoc(d: OLDoc): BookSearchResult | null {
@@ -309,32 +319,54 @@ function dedupe(list: BookSearchResult[]): BookSearchResult[] {
   return out;
 }
 
+export interface SearchOutcome {
+  results: BookSearchResult[];
+  /** true when nothing was found AND at least one source failed at the network layer */
+  offline: boolean;
+}
+
+export interface LookupOutcome {
+  result: BookSearchResult | null;
+  /** true when nothing was found AND at least one source failed at the network layer */
+  offline: boolean;
+}
+
 /**
  * Free-text search (title, author, keyword). Source chain:
  *  1. Google Books v1 JSON - only with a user API key (key-less = 429)
  *  2. Google legacy GData feed - key-less, not throttled, great IT coverage
  *  3. Open Library - final safety net
  */
-export async function searchBooks(query: string): Promise<BookSearchResult[]> {
+export async function searchBooks(query: string): Promise<SearchOutcome> {
   const q = query.trim();
-  if (!q) return [];
+  if (!q) return { results: [], offline: false };
+  const startedAt = Date.now();
+  const outcome = (results: BookSearchResult[]): SearchOutcome => ({
+    results,
+    offline: results.length === 0 && lastNetworkFailureAt >= startedAt,
+  });
 
   if (googleApiKey) {
     const v1 = await googleSearch(q);
-    if (v1 && v1.length > 0) return dedupe(v1);
+    if (v1 && v1.length > 0) return outcome(dedupe(v1));
   }
 
   const gdata = await gdataSearch(q);
-  if (gdata.length > 0) return dedupe(gdata);
+  if (gdata.length > 0) return outcome(dedupe(gdata));
 
   const ol = await openLibrarySearch(q);
-  return dedupe(ol);
+  return outcome(dedupe(ol));
 }
 
 /** Lookup a single book by ISBN (used by the barcode scanner). */
-export async function lookupByIsbn(isbnRaw: string): Promise<BookSearchResult | null> {
+export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
+  const startedAt = Date.now();
+  const outcome = (result: BookSearchResult | null): LookupOutcome => ({
+    result,
+    offline: result == null && lastNetworkFailureAt >= startedAt,
+  });
   const isbn = isbnRaw.replace(/[^0-9Xx]/g, '');
-  if (!isbn) return null;
+  if (!isbn) return outcome(null);
 
   // 1) Google Books v1 by ISBN - only worthwhile with a key (key-less = 429)
   if (googleApiKey && googleAvailable()) {
@@ -346,13 +378,13 @@ export async function lookupByIsbn(isbnRaw: string): Promise<BookSearchResult | 
     if (gFirst) {
       gFirst.isbn = gFirst.isbn ?? isbn;
       gFirst.coverUrl = gFirst.coverUrl ?? olCoverFromIsbn(isbn);
-      return gFirst;
+      return outcome(gFirst);
     }
   }
 
   // 2) Google legacy GData feed - key-less, finds Italian editions OL misses
   const gdata = await gdataIsbn(isbn);
-  if (gdata) return gdata;
+  if (gdata) return outcome(gdata);
 
   // 3) Open Library search by ISBN (fast, gives covers + pages)
   const olSearch = await getJson<{ docs?: OLDoc[] }>(
@@ -362,7 +394,7 @@ export async function lookupByIsbn(isbnRaw: string): Promise<BookSearchResult | 
   if (olDoc) {
     olDoc.isbn = olDoc.isbn ?? isbn;
     olDoc.coverUrl = olDoc.coverUrl ?? olCoverFromIsbn(isbn);
-    return olDoc;
+    return outcome(olDoc);
   }
 
   // 4) Open Library /isbn/{isbn}.json edition endpoint (last resort)
@@ -376,7 +408,7 @@ export async function lookupByIsbn(isbnRaw: string): Promise<BookSearchResult | 
   const ed = edition.data;
   if (ed?.title) {
     const authors = await resolveOpenLibraryAuthors(ed.authors);
-    return {
+    return outcome({
       title: ed.title,
       authors,
       coverUrl: olCoverFromIsbn(isbn),
@@ -385,10 +417,10 @@ export async function lookupByIsbn(isbnRaw: string): Promise<BookSearchResult | 
       publishedDate: ed.publish_date,
       publisher: ed.publishers?.[0],
       source: 'openlibrary',
-    };
+    });
   }
 
-  return null;
+  return outcome(null);
 }
 
 async function resolveOpenLibraryAuthors(

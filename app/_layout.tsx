@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { Appearance, View, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,6 +21,7 @@ import { migrateLegacyKeys } from '@/lib/migrate';
 import { setGoogleApiKey } from '@/services/bookApi';
 import { scheduleDailyReminder, hasNotificationPermission } from '@/lib/notifications';
 import { reconcileCovers } from '@/lib/covers';
+import { refreshWidgets } from '@/widgets/refresh';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Snackbar } from '@/components/Snackbar';
 import { ActiveSessionWatcher } from '@/components/ActiveSessionWatcher';
@@ -38,6 +39,7 @@ export default function RootLayout() {
   const hydrate = useStore((s) => s.hydrate);
   const hydrated = useStore((s) => s.hydrated);
   const hydrateActiveSession = useActiveSession((s) => s.hydrate);
+  const sessionHydrated = useActiveSession((s) => s.hydrated);
   const hydrateSettings = useSettings((s) => s.hydrate);
   const settingsHydrated = useSettings((s) => s.hydrated);
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
@@ -79,6 +81,16 @@ export default function RootLayout() {
     void SystemUI.setBackgroundColorAsync(t.colors.bg);
   }, [t.colors.bg]);
 
+  // Widgets resolve the 'system' theme at render time, so an OS dark-mode flip
+  // (e.g. scheduled dark theme at sunset) must re-render them - otherwise they
+  // keep the wrong palette until the next data mutation or 30-minute update.
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(() => {
+      if (useSettings.getState().scheme === 'system') void refreshWidgets();
+    });
+    return () => sub.remove();
+  }, []);
+
   // Once data is loaded, reclaim cover files orphaned by a force-quit during a
   // delete-undo window. Runs once per launch, best-effort.
   useEffect(() => {
@@ -107,7 +119,7 @@ export default function RootLayout() {
         <ThemeProvider value={navTheme}>
           <StatusBar style={t.dark ? 'light' : 'dark'} />
           <ErrorBoundary>
-          {!hydrated || !settingsHydrated ? (
+          {!hydrated || !settingsHydrated || !sessionHydrated ? (
             <View
               style={{
                 flex: 1,
@@ -145,7 +157,7 @@ export default function RootLayout() {
             </Stack>
           )}
           <Snackbar />
-          {hydrated && settingsHydrated ? <ActiveSessionWatcher /> : null}
+          {hydrated && settingsHydrated && sessionHydrated ? <ActiveSessionWatcher /> : null}
           </ErrorBoundary>
         </ThemeProvider>
       </SafeAreaProvider>

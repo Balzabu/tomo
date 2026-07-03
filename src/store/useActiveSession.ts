@@ -57,8 +57,17 @@ interface ActiveSessionState {
 }
 
 function persist(active: ActiveSession | null) {
-  if (active) void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(active));
-  else void AsyncStorage.removeItem(STORAGE_KEY);
+  // Best-effort: this store's whole purpose is surviving a process kill, so at
+  // least leave a trace when the write that would make that possible fails.
+  if (active) {
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(active)).catch((e) =>
+      console.warn('Failed to persist active session', e)
+    );
+  } else {
+    AsyncStorage.removeItem(STORAGE_KEY).catch((e) =>
+      console.warn('Failed to clear active session', e)
+    );
+  }
 }
 
 export const useActiveSession = create<ActiveSessionState>((set, get) => ({
@@ -70,6 +79,13 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      // A session started while this read was in flight (e.g. a cold-start
+      // deep link straight into the timer) must not be clobbered by the stale
+      // persisted copy - the live one is newer by definition.
+      if (get().active) {
+        set({ hydrated: true });
+        return;
+      }
       if (raw) {
         const s = JSON.parse(raw) as ActiveSession;
         // Anything read back at launch is an orphan (a live session lives in

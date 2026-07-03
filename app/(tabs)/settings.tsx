@@ -12,6 +12,7 @@ import { SettingsGroup, SettingsRow } from '@/components/SettingsRow';
 import { Flag } from '@/components/Flag';
 import { clearData } from '@/lib/storage';
 import { clearCovers } from '@/lib/covers';
+import { clearReadingSelections } from '@/widgets/widget-prefs';
 
 export default function SettingsScreen() {
   const t = useTheme();
@@ -35,17 +36,24 @@ export default function SettingsScreen() {
         text: tr('settings.clearConfirm'),
         style: 'destructive',
         onPress: async () => {
+          try {
+            // replaceAll first: it cancels any queued incremental write (so a
+            // pending debounced flush can't resurrect the old dataset mid-wipe)
+            // and rolls back + throws if the empty snapshot can't be written.
+            await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 });
+          } catch {
+            Alert.alert(tr('settings.clearTitle'), tr('data.saveFailed'));
+            return;
+          }
           await clearData();
           await clearCovers();
           // Drop any in-progress reading session too (and its ongoing
           // notification) so the next launch doesn't offer to "recover" a
           // session for a book that no longer exists.
           useActiveSession.getState().clear();
-          // Storage was already wiped above, so a failed write of the empty
-          // snapshot changes nothing - don't let it reject unhandled.
-          await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 }).catch(
-            () => {}
-          );
+          // And the widgets' pinned-book map, which would otherwise keep ids
+          // from the wiped library forever.
+          void clearReadingSelections();
         },
       },
     ]);

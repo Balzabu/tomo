@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { monthsShort } from '@/i18n/strings';
-import { computeYearWrapped, isWrappedAvailable } from '@/lib/stats';
+import { computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
 import { Button, EmptyState } from '@/components/ui';
 import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
@@ -24,12 +24,16 @@ export default function WrappedScreen() {
   const [style, setStyle] = useState<ShareStyle>('gradient');
   const [aspect, setAspect] = useState<ShareAspect>('story');
 
-  const year = new Date().getFullYear();
-  const available = isWrappedAvailable(books, sessions, year);
-  const w = computeYearWrapped(books, sessions, year);
+  // Falls back to last year (January!) and is memoized so style/aspect taps
+  // and the share busy-toggle don't re-aggregate the whole history per render.
+  const year = useMemo(() => latestWrappedYear(books, sessions), [books, sessions]);
+  const w = useMemo(
+    () => (year != null ? computeYearWrapped(books, sessions, year) : null),
+    [books, sessions, year]
+  );
   const c = t.colors;
 
-  if (!available) {
+  if (year == null || !w) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         <EmptyState icon="sparkles" title={tr('wrapped.locked')} subtitle={tr('wrapped.lockedSub')} />
