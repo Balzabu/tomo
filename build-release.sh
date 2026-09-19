@@ -45,7 +45,12 @@ shift || true
 ./android/gradlew -p android "${tasks[@]}" --no-daemon "$@"
 
 echo
-[ -f android/app/build/outputs/apk/release/app-release.apk ] && \
+if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
   echo "APK: $(pwd)/android/app/build/outputs/apk/release/app-release.apk"
-[ -f android/app/build/outputs/bundle/release/app-release.aab ] && \
+fi
+if [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+  echo "APK (unsigned): $(pwd)/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+fi
+if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
   echo "AAB: $(pwd)/android/app/build/outputs/bundle/release/app-release.aab"
+fi

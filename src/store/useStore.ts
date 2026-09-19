@@ -170,6 +170,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addBook: (result, status = 'want_to_read') => {
     const now = Date.now();
+    const isFinished = status === 'finished';
     const book: Book = {
       id: uid('b_'),
       title: result.title,
@@ -183,9 +184,11 @@ export const useStore = create<StoreState>((set, get) => ({
       categories: result.categories,
       language: result.language,
       status,
-      currentPage: 0,
+      currentPage: isFinished && result.pageCount ? result.pageCount : 0,
       addedAt: now,
       startedAt: status === 'reading' ? now : undefined,
+      finishedAt: isFinished ? now : undefined,
+      readCount: isFinished ? 1 : undefined,
       shelfIds: [],
       source: result.source,
     };
@@ -196,6 +199,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addManualBook: (input) => {
     const now = Date.now();
+    const status = input.status ?? 'want_to_read';
+    const isFinished = status === 'finished';
     const book: Book = {
       id: uid('b_'),
       title: input.title,
@@ -204,14 +209,16 @@ export const useStore = create<StoreState>((set, get) => ({
       isbn: input.isbn,
       pageCount: input.pageCount,
       description: input.description,
-      status: input.status ?? 'want_to_read',
-      currentPage: 0,
+      status,
+      currentPage: isFinished && input.pageCount ? input.pageCount : 0,
       series: input.series,
       seriesNumber: input.seriesNumber,
       moods: input.moods,
       pace: input.pace,
       addedAt: now,
-      startedAt: input.status === 'reading' ? now : undefined,
+      startedAt: status === 'reading' ? now : undefined,
+      finishedAt: isFinished ? now : undefined,
+      readCount: isFinished ? 1 : undefined,
       shelfIds: [],
       source: 'manual',
     };
@@ -298,7 +305,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updateBook: (id, patch) => {
     set((s) => ({
-      books: s.books.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+      books: s.books.map((b) => {
+        if (b.id !== id) return b;
+        const next = { ...b, ...patch };
+        // Metadata corrections must never leave impossible progress such as
+        // page 400 of a book whose corrected length is 300 pages.
+        if (patch.pageCount !== undefined && next.pageCount) {
+          if (next.status === 'finished' || next.currentPage > next.pageCount) {
+            next.currentPage = next.pageCount;
+          }
+        }
+        return next;
+      }),
     }));
     persist(get);
   },
@@ -362,13 +380,12 @@ export const useStore = create<StoreState>((set, get) => ({
         if (b.status === status) return b;
         const patch: Partial<Book> = { status };
         if (status === 'reading' && !b.startedAt) patch.startedAt = Date.now();
-        // Leaving "finished" clears the finish date so a later re-read records a
-        // fresh one instead of silently keeping the stale year.
-        if (status !== 'finished' && b.status === 'finished') patch.finishedAt = undefined;
         if (status === 'finished') {
-          patch.finishedAt = Date.now();
+          // A normal status correction must not count as a re-read. Only
+          // startReread clears finishedAt, which marks a genuinely new cycle.
+          patch.finishedAt = b.finishedAt ?? Date.now();
           if (b.pageCount) patch.currentPage = b.pageCount;
-          if (b.status !== 'finished') patch.readCount = (b.readCount ?? 0) + 1;
+          if (!b.finishedAt) patch.readCount = (b.readCount ?? 0) + 1;
         }
         return { ...b, ...patch };
       }),
@@ -389,10 +406,10 @@ export const useStore = create<StoreState>((set, get) => ({
         }
         if (b.pageCount && page >= b.pageCount) {
           patch.status = 'finished';
-          // Fresh date on a *new* completion (matches setStatus); keep the
-          // existing one when the book was already finished.
-          patch.finishedAt = b.status !== 'finished' ? Date.now() : b.finishedAt;
-          if (b.status !== 'finished') patch.readCount = (b.readCount ?? 0) + 1;
+          // startReread clears finishedAt; ordinary status corrections keep it.
+          // This makes only a genuinely new read cycle increase readCount.
+          patch.finishedAt = b.finishedAt ?? Date.now();
+          if (!b.finishedAt) patch.readCount = (b.readCount ?? 0) + 1;
         }
         return { ...b, ...patch };
       }),

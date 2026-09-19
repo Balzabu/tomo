@@ -332,7 +332,24 @@ export interface LookupOutcome {
 }
 
 /**
- * Free-text search (title, author, keyword). Source chain:
+ * Recognise a manually entered ISBN-10/ISBN-13. Spaces and hyphens are
+ * accepted, as are common prefixes such as "ISBN:" and "ISBN-13:".
+ * Returning null keeps ordinary title/author searches on the free-text path.
+ */
+export function isbnFromQuery(query: string): string | null {
+  const compact = query
+    .trim()
+    .replace(/^isbn(?:-1[03])?\s*:?\s*/i, '')
+    .replace(/[\s-]/g, '')
+    .toUpperCase();
+
+  if (/^\d{13}$/.test(compact) || /^\d{9}[\dX]$/.test(compact)) return compact;
+  return null;
+}
+
+/**
+ * Free-text search (title, author, keyword). ISBN queries are routed to
+ * lookupByIsbn by the search screen. Source chain:
  *  1. Google Books v1 JSON - only with a user API key (key-less = 429)
  *  2. Google legacy GData feed - key-less, not throttled, great IT coverage
  *  3. Open Library - final safety net

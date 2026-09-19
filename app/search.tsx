@@ -12,7 +12,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { searchBooks } from '@/services/bookApi';
+import { isbnFromQuery, lookupByIsbn, searchBooks } from '@/services/bookApi';
 import { BookSearchResult, ReadingStatus, STATUS_ORDER } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -49,7 +49,13 @@ export default function SearchScreen() {
     debounce.current = setTimeout(async () => {
       const myId = ++reqId.current;
       setLoading(true);
-      const r = await searchBooks(query);
+      const isbn = isbnFromQuery(query);
+      const r = isbn
+        ? await lookupByIsbn(isbn).then(({ result, offline }) => ({
+            results: result ? [result] : [],
+            offline,
+          }))
+        : await searchBooks(query);
       // Ignore a stale response (newer search) or one that resolved after the
       // screen was dismissed.
       if (myId !== reqId.current || !mountedRef.current) return;
@@ -116,6 +122,9 @@ export default function SearchScreen() {
                 <Text style={[styles.meta, { color: t.colors.textFaint }]}>
                   {tr('search.pages', { count: item.pageCount })}
                 </Text>
+              ) : null}
+              {item.isbn ? (
+                <Text style={[styles.meta, { color: t.colors.textFaint }]}>ISBN {item.isbn}</Text>
               ) : null}
             </View>
             <Ionicons name="add-circle" size={26} color={t.colors.primary} />
