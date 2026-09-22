@@ -98,23 +98,21 @@ export default function DataSettings() {
       if (enrichCancelled.current) break;
       try {
         const { result: found } = await lookupByIsbn(b.isbn!);
-        if (found?.pageCount) {
-          // A finished book imported without page data (e.g. StoryGraph) sits at
-          // currentPage 0; once we learn the page count, mark it fully read.
-          patches.push({
-            id: b.id,
-            patch:
-              b.status === 'finished' && b.currentPage < found.pageCount
-                ? { pageCount: found.pageCount, currentPage: found.pageCount }
-                : { pageCount: found.pageCount },
-          });
-        }
+        // The store's patch application marks a finished book fully read once
+        // its length is known, so only the page count needs sending.
+        if (found?.pageCount) patches.push({ id: b.id, patch: { pageCount: found.pageCount } });
       } catch {
         // best-effort; skip on failure
       }
+      // Pace the chain: 60 sequential lookups can mean 200+ requests, which
+      // Open Library throttles.
+      await new Promise((r) => setTimeout(r, 300));
     }
-    // One batched write instead of one full-DB write per enriched book.
-    if (patches.length) useStore.getState().updateBooks(patches);
+    if (enrichCancelled.current || patches.length === 0) return;
+    // One batched write instead of one full-DB write per enriched book; the
+    // lookups took a while, so only fill books whose page count is *still*
+    // missing (the user may have typed it in the meantime) and that still exist.
+    useStore.getState().updateBooks(patches, (current) => !current.pageCount);
   };
 
   const onImportCsv = async () => {

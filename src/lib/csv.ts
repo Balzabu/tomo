@@ -1,7 +1,8 @@
 /**
  * Minimal RFC-4180-ish CSV parser (no dependency). Handles quoted fields,
  * escaped quotes ("") and newlines inside quotes - enough for Goodreads /
- * StoryGraph exports.
+ * StoryGraph exports. A quote in the middle of an unquoted field (5'10" tall)
+ * is taken literally: opening quoted mode there swallowed the rest of the file.
  */
 export function parseCsv(text: string): Record<string, string>[] {
   const rows = parseRows(text);
@@ -40,7 +41,7 @@ function parseRows(text: string): string[][] {
       } else {
         field += c;
       }
-    } else if (c === '"') {
+    } else if (c === '"' && field === '') {
       inQuotes = true;
     } else if (c === ',') {
       row.push(field);

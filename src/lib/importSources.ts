@@ -30,7 +30,9 @@ function isUsable(b: ImportedBook | null): b is ImportedBook {
 
 function num(v?: string): number | undefined {
   if (!v) return undefined;
-  const n = parseInt(v.replace(/[^0-9]/g, ''), 10);
+  // Keep the decimal point so "300.0" parses as 300 (stripping every
+  // non-digit turned it into 3000); thousands separators are still dropped.
+  const n = parseInt(v.replace(/[^0-9.]/g, ''), 10);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 

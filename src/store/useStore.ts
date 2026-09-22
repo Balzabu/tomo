@@ -32,7 +32,10 @@ interface StoreState extends AppData {
   addManualBook: (input: Partial<Book> & { title: string }) => Book;
   addImportedBooks: (items: ImportedBook[]) => { added: number; skipped: number; addedIds: string[] };
   updateBook: (id: string, patch: Partial<Book>) => void;
-  updateBooks: (patches: { id: string; patch: Partial<Book> }[]) => void;
+  updateBooks: (
+    patches: { id: string; patch: Partial<Book> }[],
+    onlyIf?: (current: Book) => boolean
+  ) => void;
   deleteBook: (id: string) => void;
   deleteBooks: (ids: string[]) => { books: Book[]; sessions: ReadingSession[]; notes: BookNote[] };
   restoreBooks: (data: { books: Book[]; sessions: ReadingSession[]; notes: BookNote[] }) => void;
@@ -145,6 +148,20 @@ function persist(get: () => StoreState) {
 AppState.addEventListener('change', (state) => {
   if (state !== 'active') flushPersist();
 });
+
+/** Merge a metadata patch into a book. Corrections must never leave
+ *  impossible progress such as page 400 of a book whose corrected length is
+ *  300 pages, and a finished book always sits on its last page. */
+function applyBookPatch(b: Book, patch: Partial<Book>): Book {
+  const next = { ...b, ...patch };
+  if ('isbn' in patch) next.isbn = canonicalIsbn(patch.isbn);
+  if (patch.pageCount !== undefined && next.pageCount) {
+    if (next.status === 'finished' || next.currentPage > next.pageCount) {
+      next.currentPage = next.pageCount;
+    }
+  }
+  return next;
+}
 
 /** Store the canonical ISBN-13 when the value validates; keep the raw string
  *  otherwise (never drop user data over a checksum). */
@@ -321,32 +338,23 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updateBook: (id, patch) => {
     set((s) => ({
-      books: s.books.map((b) => {
-        if (b.id !== id) return b;
-        const next = { ...b, ...patch };
-        if ('isbn' in patch) next.isbn = canonicalIsbn(patch.isbn);
-        // Metadata corrections must never leave impossible progress such as
-        // page 400 of a book whose corrected length is 300 pages.
-        if (patch.pageCount !== undefined && next.pageCount) {
-          if (next.status === 'finished' || next.currentPage > next.pageCount) {
-            next.currentPage = next.pageCount;
-          }
-        }
-        return next;
-      }),
+      books: s.books.map((b) => (b.id === id ? applyBookPatch(b, patch) : b)),
     }));
     persist(get);
   },
 
   // Apply many book patches in a single state update + persist (used by
   // background enrichment so it doesn't rewrite the whole DB once per book).
-  updateBooks: (patches) => {
+  // `onlyIf` is evaluated against the book's *current* state at apply time,
+  // so a slow background job can't overwrite what the user edited meanwhile.
+  updateBooks: (patches, onlyIf) => {
     if (patches.length === 0) return;
     const map = new Map(patches.map((p) => [p.id, p.patch]));
     set((s) => ({
       books: s.books.map((b) => {
         const patch = map.get(b.id);
-        return patch ? { ...b, ...patch } : b;
+        if (!patch || (onlyIf && !onlyIf(b))) return b;
+        return applyBookPatch(b, patch);
       }),
     }));
     persist(get);
