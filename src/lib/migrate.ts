@@ -25,11 +25,19 @@ let done = false;
 export async function migrateLegacyKeys(): Promise<void> {
   if (done) return;
   try {
+    // One cheap listing instead of a getItem per key: reading a value only to
+    // test its presence could throw on an oversized legacy blob.
+    const keys = new Set(await AsyncStorage.getAllKeys());
     for (const [oldKey, newKey] of RENAMES) {
-      const existingNew = await AsyncStorage.getItem(newKey);
-      if (existingNew != null) continue; // already migrated / fresh install
+      if (!keys.has(oldKey)) continue; // nothing under the old key
+      if (keys.has(newKey)) {
+        // Already migrated but the old copy was never removed (a crash between
+        // the two writes): drop it so it stops eating the storage budget.
+        await AsyncStorage.removeItem(oldKey);
+        continue;
+      }
       const oldVal = await AsyncStorage.getItem(oldKey);
-      if (oldVal == null) continue; // nothing under the old key
+      if (oldVal == null) continue;
       await AsyncStorage.setItem(newKey, oldVal);
       await AsyncStorage.removeItem(oldKey);
     }

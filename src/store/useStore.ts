@@ -13,7 +13,15 @@ import {
   ReadingStatus,
   Shelf,
 } from '@/types';
-import { emptyData, loadData, saveData, PERSIST_FAILED } from '@/lib/storage';
+import {
+  emptyData,
+  loadData,
+  saveData,
+  didReadFail,
+  lastSaveFootprint,
+  PERSIST_FAILED,
+} from '@/lib/storage';
+import { STORAGE_WARN_CHARS } from '@/lib/storageCore';
 import { toDateKey, uid } from '@/lib/utils';
 import { isbnKey, normalizeBookIsbns, normalizeIsbn } from '@/lib/isbn';
 import { withRereadStarted } from '@/lib/reads';
@@ -105,6 +113,20 @@ function notifyPersistFailure(): void {
   snack.show(translate(lang, 'data.saveFailed'));
 }
 
+// Warn once per app session when the serialised library gets large (or a
+// single record can't be chunked) - long before the storage DB fills up.
+let storageWarned = false;
+function notifyStorageLarge(): void {
+  if (storageWarned) return;
+  const fp = lastSaveFootprint();
+  if (!fp || (fp.totalChars < STORAGE_WARN_CHARS && fp.oversizedItems === 0)) return;
+  const snack = useSnackbar.getState();
+  if (snack.message != null && snack.actionLabel) return; // don't steal an undo
+  storageWarned = true;
+  const lang = resolveLang(useSettings.getState().language);
+  snack.show(translate(lang, 'data.storageLarge'));
+}
+
 // Monotonic flush id: a failed older flush must not re-arm the pending marker
 // or alarm the user when a newer flush has already taken over.
 let flushSeq = 0;
@@ -122,7 +144,10 @@ function flushPersist(): void {
   latestGet = null;
   const seq = ++flushSeq;
   void saveData(data).then((ok) => {
-    if (ok) return refreshWidgets(data);
+    if (ok) {
+      notifyStorageLarge();
+      return refreshWidgets(data);
+    }
     if (seq !== flushSeq) return; // a newer flush reports its own outcome
     // Keep the write pending so the next mutation/backgrounding retries it,
     // unless a newer mutation already re-armed it.
@@ -189,6 +214,12 @@ export const useStore = create<StoreState>((set, get) => ({
     const { books, changed } = normalizeBookIsbns(data.books);
     set({ ...data, books, hydrated: true });
     if (changed) persist(get);
+    if (didReadFail()) {
+      // Tell the user why the library is empty and that changes won't be
+      // saved, rather than letting them rebuild it on top of a blocked disk.
+      const lang = resolveLang(useSettings.getState().language);
+      useSnackbar.getState().show(translate(lang, 'data.loadFailed'));
+    }
   },
 
   replaceAll: async (data) => {

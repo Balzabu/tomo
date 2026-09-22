@@ -32,7 +32,9 @@ export async function loadWidgetContext(preloaded?: AppData): Promise<WidgetCont
   // update, so migrate the legacy storage keys here too (idempotent, no-op once
   // done). When `preloaded` is passed, the app already migrated.
   if (!preloaded) await migrateLegacyKeys();
-  const data = preloaded ?? (await loadData());
+  // Read-only: this runs in the widgets' own JS runtime, which must never
+  // migrate/write over data the app may have changed since.
+  const data = preloaded ?? (await loadData({ readOnly: true }));
 
   let scheme: SchemeChoice = 'system';
   let language: Language = 'system';

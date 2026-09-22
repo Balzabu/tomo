@@ -1,52 +1,60 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppData } from '@/types';
+import {
+  clearFromKV,
+  emptyAppData,
+  loadFromKV,
+  Manifest,
+  saveToKV,
+} from '@/lib/storageCore';
 
-const STORAGE_KEY = 'tomo:data:v1';
-// A blob that fails to parse is copied here before being abandoned, so a
+// Thin binding of the chunked storage protocol (src/lib/storageCore.ts) to
+// AsyncStorage, plus the module-level "the disk may hold data we couldn't
+// read" guard shared by the store.
+
+// A v1 blob that fails to parse is copied here before being abandoned, so a
 // corrupted library can still be recovered by hand instead of being
 // overwritten by the first debounced write of the near-empty fresh state.
 const QUARANTINE_KEY = 'tomo:data:corrupt:v1';
 
-export const emptyData: AppData = {
-  books: [],
-  sessions: [],
-  notes: [],
-  shelves: [],
-  goals: [],
-  version: 1,
-};
+export const emptyData: AppData = emptyAppData;
 
-// Set when the stored blob could not be *read* (as opposed to parsed): the
-// data may still be intact on disk (e.g. Android's ~2MB CursorWindow read
-// limit), so implicit debounced writes must not overwrite it. An explicit
-// restore/clear (replaceAll) still may, via { force: true }.
+// Set when the stored data could not be *read* (as opposed to parsed): it may
+// still be intact on disk (a chunk read threw, a manifest was unreadable), so
+// implicit debounced writes must not overwrite it. An explicit restore/clear
+// (replaceAll) still may, via { force: true }.
+//
+// Note: a library that hit the old single-row limit before this format
+// existed cannot be recovered from JS - there is no partial-read API - so the
+// chunked layout prevents the trap for everyone else rather than curing it.
 let readFailed = false;
+let lastManifest: Manifest | null = null;
+let footprint: { totalChars: number; oversizedItems: number } | null = null;
 
-export async function loadData(): Promise<AppData> {
-  let raw: string | null = null;
-  try {
-    raw = await AsyncStorage.getItem(STORAGE_KEY);
-  } catch (e) {
-    console.warn('Failed to read stored data', e);
-    readFailed = true;
-    return { ...emptyData };
-  }
-  if (!raw) return { ...emptyData };
-  try {
-    const parsed = JSON.parse(raw) as Partial<AppData>;
-    return {
-      ...emptyData,
-      ...parsed,
-      books: parsed.books ?? [],
-      sessions: parsed.sessions ?? [],
-      notes: parsed.notes ?? [],
-      shelves: parsed.shelves ?? [],
-      goals: parsed.goals ?? [],
-    };
-  } catch (e) {
-    console.warn('Failed to parse stored data, starting fresh', e);
-    void AsyncStorage.setItem(QUARANTINE_KEY, raw).catch(() => {});
-    return { ...emptyData };
+export async function loadData(opts?: { readOnly?: boolean }): Promise<AppData> {
+  const res = await loadFromKV(AsyncStorage, opts);
+  switch (res.status) {
+    case 'ok':
+      lastManifest = res.manifest ?? null;
+      return res.data;
+    case 'empty':
+      return { ...emptyData };
+    case 'read_failed':
+      console.warn('Failed to read stored data');
+      readFailed = true;
+      return { ...emptyData };
+    case 'corrupt_v1': {
+      console.warn('Failed to parse stored data, starting fresh');
+      if (!opts?.readOnly && res.rawV1 != null) {
+        try {
+          await AsyncStorage.setItem(QUARANTINE_KEY, res.rawV1);
+        } catch {
+          // Couldn't even keep a copy: refuse to overwrite the original.
+          readFailed = true;
+        }
+      }
+      return { ...emptyData };
+    }
   }
 }
 
@@ -61,7 +69,9 @@ export async function saveData(data: AppData, opts?: { force?: boolean }): Promi
   // be intact on disk. The caller surfaces this like any failed write.
   if (readFailed && !opts?.force) return false;
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const r = await saveToKV(AsyncStorage, data, lastManifest);
+    lastManifest = r.manifest;
+    footprint = { totalChars: r.totalChars, oversizedItems: r.oversizedItems };
     readFailed = false;
     return true;
   } catch (e) {
@@ -77,7 +87,15 @@ export function didReadFail(): boolean {
   return readFailed;
 }
 
+/** Size of the last successful write, for the "library is getting large"
+ *  warning. */
+export function lastSaveFootprint(): { totalChars: number; oversizedItems: number } | null {
+  return footprint;
+}
+
 export async function clearData(): Promise<void> {
-  await AsyncStorage.removeItem(STORAGE_KEY);
+  await clearFromKV(AsyncStorage);
+  lastManifest = null;
+  footprint = null;
   readFailed = false;
 }
