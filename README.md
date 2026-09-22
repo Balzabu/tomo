@@ -25,7 +25,7 @@ It is built with Expo (React Native and TypeScript). Book data comes from Google
 - Series, mood, and pace fields shown as chips.
 - CSV import from Goodreads and StoryGraph, and full JSON backup export and import.
 - An optional daily reading reminder.
-- Home-screen widgets: currently reading, quick-start a session, streak and goal, reading calendar.
+- Home-screen widgets: currently reading, quick-start a session, streak and goal, reading calendar. All resizable, laid out for their actual size, and following the system light/dark mode.
 - 16 light and dark color themes.
 - Six languages: Italian, English, Spanish, French, German, Portuguese, following the system language by default.
 - All data stays local: no account, no ads, no analytics, no tracking.

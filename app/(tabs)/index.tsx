@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +22,7 @@ import {
   LibrarySort,
   MOOD_OPTIONS,
   ReadingPace,
+  ReadingStatus,
   STATUS_ORDER,
 } from '@/types';
 import { onColor, radius, spacing, useTheme } from '@/theme/theme';
@@ -66,6 +67,17 @@ export default function LibraryScreen() {
   const sortAsc = useSettings((s) => s.librarySortAsc);
   const setLibraryView = useSettings((s) => s.setLibraryView);
   const setFilter = useCallback((f: Filter) => setLibraryView({ libraryFilter: f }), [setLibraryView]);
+
+  // Deep links (e.g. the "+N more" of the Start-session widget) can open the
+  // library pre-filtered: tomo:///?status=reading. Consume the param so a later
+  // manual filter change isn't overridden when the screen re-renders.
+  const { status: linkStatus } = useLocalSearchParams<{ status?: string }>();
+  useEffect(() => {
+    if (linkStatus && STATUS_ORDER.includes(linkStatus as ReadingStatus)) {
+      setFilter({ kind: 'status', status: linkStatus as ReadingStatus });
+      router.setParams({ status: undefined });
+    }
+  }, [linkStatus, setFilter]);
   const setSort = useCallback(
     (next: Sort) => {
       // Picking a sort resets the direction to that sort's natural one; tapping

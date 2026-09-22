@@ -17,14 +17,16 @@ export async function refreshWidgets(data?: AppData): Promise<void> {
   try {
     // Lazy require so iOS never loads the Android-only native module.
     const { requestWidgetUpdate } = require('react-native-android-widget');
-    const { renderForName } = require('./widget-task-handler');
+    const { renderWidgetFor } = require('./widget-task-handler');
     const ctx = await loadWidgetContext(data);
     await Promise.all(
       NAMES.map((name) =>
         requestWidgetUpdate({
           widgetName: name,
-          // `info.widgetId` lets each placed instance keep its own book selection.
-          renderWidget: (info: { widgetId: number }) => renderForName(name, ctx, info.widgetId),
+          // `info.widgetId` lets each placed instance keep its own book
+          // selection; its size lets each one lay out for its own footprint.
+          renderWidget: (info: { widgetId: number; width: number; height: number }) =>
+            renderWidgetFor(name, ctx, info.widgetId, { width: info.width, height: info.height }),
         }).catch(() => {})
       )
     );

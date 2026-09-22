@@ -2,12 +2,14 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="140dp"
     android:minHeight="140dp"
+    android:minResizeWidth="70dp"
+    android:minResizeHeight="70dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
 
 
 
-    android:resizeMode="none"
+    android:resizeMode="horizontal|vertical"
 
     android:description="@string/widget_streakgoal_description"
 

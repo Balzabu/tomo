@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Appearance,
   Pressable,
   ScrollView,
   StatusBar,
@@ -18,7 +19,7 @@ import {
   WidgetContext,
 } from './widget-shared';
 import { setReadingSelection } from './widget-prefs';
-import { renderForName } from './widget-task-handler';
+import { renderWidgetFor } from './widget-task-handler';
 
 /**
  * Configuration screen for the "Currently reading" widget. Launched by Android
@@ -52,7 +53,12 @@ export function WidgetConfigScreen({
     committing.current = true;
     try {
       if (bookId) await setReadingSelection(widgetInfo.widgetId, bookId);
-      renderWidget(await renderForName('CurrentlyReading', ctx, widgetInfo.widgetId));
+      renderWidget(
+        await renderWidgetFor('CurrentlyReading', ctx, widgetInfo.widgetId, {
+          width: widgetInfo.width,
+          height: widgetInfo.height,
+        })
+      );
       setResult('ok');
     } catch {
       setResult('ok'); // never trap the user in the config screen
@@ -60,9 +66,17 @@ export function WidgetConfigScreen({
   };
 
   if (!ctx) {
+    // Theme isn't loaded yet: follow the system scheme so a light-mode user
+    // doesn't get a dark flash before the list appears.
+    const light = Appearance.getColorScheme() === 'light';
     return (
-      <View style={[styles.center, { backgroundColor: '#1a1b26' }]}>
-        <ActivityIndicator color="#7aa2f7" size="large" />
+      <View style={[styles.center, { backgroundColor: light ? '#eff1f5' : '#1a1b26' }]}>
+        <StatusBar
+          barStyle={light ? 'dark-content' : 'light-content'}
+          backgroundColor="transparent"
+          translucent
+        />
+        <ActivityIndicator color={light ? '#8839ef' : '#7aa2f7'} size="large" />
       </View>
     );
   }
@@ -78,6 +92,11 @@ export function WidgetConfigScreen({
         paddingTop: (StatusBar.currentHeight ?? 0) + 16,
       }}
     >
+      <StatusBar
+        barStyle={ctx.theme.dark ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+        translucent
+      />
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: c.text }]}>{t('widget.pickTitle')}</Text>

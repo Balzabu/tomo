@@ -1,0 +1,56 @@
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java
+index 867f716..b617a13 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java
+@@ -74,23 +74,43 @@ public abstract class HeadlessJsTaskWorker extends ListenableWorker implements H
+         ReactHost reactHost = this.getReactHost();
+         ReactContext reactContext = reactHost.getCurrentReactContext();
+ 
+-        if (reactContext == null) {
++        // On a cold start (app process just spawned by the widget update) the
++        // context can already exist while its JS instance is still loading:
++        // starting the task then throws "CatalystInstance not available" and
++        // the widget stays blank until the next update. Wait for the instance.
++        if (reactContext != null && reactContext.hasActiveReactInstance()) {
++            this.invokeStartTask(reactContext, taskConfig, 0);
++        } else {
+             reactHost.addReactInstanceEventListener(new ReactInstanceEventListener() {
+                 public void onReactContextInitialized(ReactContext reactContext) {
+-                    HeadlessJsTaskWorker.this.invokeStartTask(reactContext, taskConfig);
+                     reactHost.removeReactInstanceEventListener(this);
++                    HeadlessJsTaskWorker.this.invokeStartTask(reactContext, taskConfig, 0);
+                 }
+             });
+             reactHost.start();
+-        } else {
+-            this.invokeStartTask(reactContext, taskConfig);
+         }
+     }
+ 
+-    private void invokeStartTask(ReactContext reactContext, final HeadlessJsTaskConfig taskConfig) {
+-        final HeadlessJsTaskContext headlessJsTaskContext = HeadlessJsTaskContext.getInstance(reactContext);
+-        headlessJsTaskContext.addTaskEventListener(this);
+-        UiThreadUtil.runOnUiThread(() -> this.taskId = headlessJsTaskContext.startTask(taskConfig));
++    private static final int START_RETRIES = 50;
++    private static final long START_RETRY_DELAY_MS = 100;
++
++    private void invokeStartTask(ReactContext reactContext, final HeadlessJsTaskConfig taskConfig, int attempt) {
++        UiThreadUtil.runOnUiThread(() -> {
++            if (!reactContext.hasActiveReactInstance()) {
++                if (attempt < START_RETRIES) {
++                    UiThreadUtil.runOnUiThread(
++                        () -> this.invokeStartTask(reactContext, taskConfig, attempt + 1),
++                        START_RETRY_DELAY_MS
++                    );
++                } else if (this.mCompleter != null) {
++                    this.mCompleter.set(Result.retry());
++                }
++                return;
++            }
++            final HeadlessJsTaskContext headlessJsTaskContext = HeadlessJsTaskContext.getInstance(reactContext);
++            headlessJsTaskContext.addTaskEventListener(this);
++            this.taskId = headlessJsTaskContext.startTask(taskConfig);
++        });
+     }
+ 
+     private void cleanUpTask() {

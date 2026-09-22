@@ -64,8 +64,32 @@
       "expo-localization",
       "./plugins/withAndroidLintFix",
       [
+        "./plugins/withWidgetMinResize",
+        {
+          "CurrentlyReading": {
+            "width": "150dp",
+            "height": "70dp"
+          },
+          "QuickStart": {
+            "width": "150dp",
+            "height": "100dp"
+          },
+          "StreakGoal": {
+            "width": "70dp",
+            "height": "70dp"
+          },
+          "Heatmap": {
+            "width": "150dp",
+            "height": "110dp"
+          }
+        }
+      ],
+      [
         "react-native-android-widget",
         {
+          "fonts": [
+            "./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"
+          ],
           "widgets": [
             {
               "name": "CurrentlyReading",
@@ -77,7 +101,8 @@
               "targetCellHeight": 2,
               "previewImage": "./assets/widgets/currentlyreading.png",
               "widgetFeatures": "reconfigurable",
-              "updatePeriodMillis": 1800000
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
             },
             {
               "name": "QuickStart",
@@ -88,7 +113,8 @@
               "targetCellWidth": 3,
               "targetCellHeight": 3,
               "previewImage": "./assets/widgets/quickstart.png",
-              "updatePeriodMillis": 1800000
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
             },
             {
               "name": "StreakGoal",
@@ -99,7 +125,8 @@
               "targetCellWidth": 2,
               "targetCellHeight": 2,
               "previewImage": "./assets/widgets/streakgoal.png",
-              "updatePeriodMillis": 1800000
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
             },
             {
               "name": "Heatmap",
@@ -110,7 +137,8 @@
               "targetCellWidth": 4,
               "targetCellHeight": 2,
               "previewImage": "./assets/widgets/heatmap.png",
-              "updatePeriodMillis": 1800000
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
             }
           ]
         }
