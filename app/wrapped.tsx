@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { durationUnits, formatInt, useTranslation } from '@/i18n';
 import { monthsShort } from '@/i18n/strings';
-import { computeYearWrapped, latestWrappedYear } from '@/lib/stats';
+import { availableWrappedYears, computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
-import { Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState, Pill } from '@/components/ui';
 import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
 import { ShareStyleControls } from '@/components/ShareStyleControls';
 import { shareViewAsImage } from '@/lib/shareImage';
@@ -24,9 +24,13 @@ export default function WrappedScreen() {
   const [style, setStyle] = useState<ShareStyle>('gradient');
   const [aspect, setAspect] = useState<ShareAspect>('story');
 
-  // Falls back to last year (January!) and is memoized so style/aspect taps
-  // and the share busy-toggle don't re-aggregate the whole history per render.
-  const year = useMemo(() => latestWrappedYear(books, sessions), [books, sessions]);
+  // Defaults to the latest year with enough activity (last year in January!)
+  // and lets the user pick any earlier one. Memoized so style/aspect taps and
+  // the share busy-toggle don't re-aggregate the whole history per render.
+  const years = useMemo(() => availableWrappedYears(books, sessions), [books, sessions]);
+  const [pickedYear, setPickedYear] = useState<number | null>(null);
+  const latest = useMemo(() => latestWrappedYear(books, sessions), [books, sessions]);
+  const year = pickedYear != null && years.includes(pickedYear) ? pickedYear : latest;
   const w = useMemo(
     () => (year != null ? computeYearWrapped(books, sessions, year) : null),
     [books, sessions, year]
@@ -65,6 +69,16 @@ export default function WrappedScreen() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, alignItems: 'center' }}>
+      {years.length > 1 ? (
+        <View style={{ width: '100%', maxWidth: 480, gap: spacing.sm }}>
+          <Text style={{ color: c.textMuted, fontSize: 13, fontWeight: '600' }}>{tr('wrapped.pickYear')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {years.map((y) => (
+              <Pill key={y} label={String(y)} active={y === year} onPress={() => setPickedYear(y)} />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
       <ShareStyleControls
         styles={WRAPPED_STYLES}
         style={style}

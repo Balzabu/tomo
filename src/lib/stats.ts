@@ -1,6 +1,6 @@
 import { Book, Goal, ReadingSession } from '@/types';
 import { toDateKey, dateKeyToDate } from '@/lib/utils';
-import { booksFinishedInYear, countFinishesInYear } from '@/lib/reads';
+import { booksFinishedInYear, countFinishesInYear, finishesOf } from '@/lib/reads';
 
 export interface OverallStats {
   totalBooks: number;
@@ -26,15 +26,9 @@ export function computeStats(
   const finishedBooks = books.filter((b) => b.status === 'finished');
   const finishedThisYear = countFinishesInYear(books, year);
 
-  // The rate only counts sessions where pages were actually logged: a timed
-  // session saved without page numbers would put its hours in the denominator
-  // with nothing in the numerator, deflating pages/hour for everyone.
-  const pagedSeconds = sessions.reduce(
-    (s, x) => s + ((x.pagesRead || 0) > 0 ? x.durationSeconds : 0),
-    0
-  );
-  const hours = pagedSeconds / 3600;
-  const avgPagesPerHour = hours > 0 ? totalPagesRead / hours : 0;
+  const paced = pacedTotals(sessions);
+  const hours = paced.seconds / 3600;
+  const avgPagesPerHour = hours > 0 ? paced.pages / hours : 0;
 
   const { current, longest } = computeStreaks(sessions);
 
@@ -50,6 +44,25 @@ export function computeStats(
     longestStreak: longest,
     finishedThisYear,
   };
+}
+
+/** A session counts toward the reading pace only when it has both time and
+ *  pages: a timed session with no pages would deflate pages/hour, and an
+ *  untimed "update progress" session (0 s) would inflate it. */
+export function isPaced(s: ReadingSession): boolean {
+  return s.durationSeconds > 0 && (s.pagesRead || 0) > 0;
+}
+
+/** Pages and seconds over paced sessions only. */
+export function pacedTotals(sessions: ReadingSession[]): { pages: number; seconds: number } {
+  let pages = 0;
+  let seconds = 0;
+  for (const s of sessions) {
+    if (!isPaced(s)) continue;
+    pages += s.pagesRead;
+    seconds += s.durationSeconds;
+  }
+  return { pages, seconds };
 }
 
 /** Map of YYYY-MM-DD -> seconds read that day. */
@@ -161,18 +174,11 @@ export function estimateRemaining(
   const pagesLeft = book.pageCount - book.currentPage;
   if (pagesLeft <= 0) return null;
 
-  // Pace only counts sessions with pages logged - see computeStats.
-  const pagedSeconds = (list: ReadingSession[]) =>
-    list.reduce((sum, s) => sum + ((s.pagesRead || 0) > 0 ? s.durationSeconds : 0), 0);
-  const bookSessions = sessions.filter((s) => s.bookId === book.id);
-  let pages = bookSessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
-  let seconds = pagedSeconds(bookSessions);
+  // Pace only counts timed sessions with pages logged - see isPaced.
+  let { pages, seconds } = pacedTotals(sessions.filter((s) => s.bookId === book.id));
 
   // fall back to global pace if this book has too little data
-  if (pages < 5 || seconds < 60) {
-    pages = sessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
-    seconds = pagedSeconds(sessions);
-  }
+  if (pages < 5 || seconds < 60) ({ pages, seconds } = pacedTotals(sessions));
   if (pages < 5 || seconds < 60) return null;
 
   const secondsPerPage = seconds / pages;
@@ -206,6 +212,7 @@ export function computeInsights(books: Book[], sessions: ReadingSession[]): Insi
   // fastest finished book by pages/hour (needs ≥30 min and ≥20 pages logged)
   const byBook = new Map<string, { pages: number; seconds: number }>();
   for (const s of sessions) {
+    if (!isPaced(s)) continue;
     const e = byBook.get(s.bookId) ?? { pages: 0, seconds: 0 };
     e.pages += s.pagesRead || 0;
     e.seconds += s.durationSeconds;
@@ -269,6 +276,25 @@ export function isWrappedAvailable(
   const finishedThisYear = countFinishesInYear(books, year);
   const sessionsThisYear = sessions.filter((s) => s.date.startsWith(prefix)).length;
   return finishedThisYear >= 3 || sessionsThisYear >= 15;
+}
+
+/** Every year that has enough activity for a wrapped, newest first. */
+export function availableWrappedYears(books: Book[], sessions: ReadingSession[]): number[] {
+  const current = new Date().getFullYear();
+  let earliest = current;
+  for (const s of sessions) {
+    const y = Number(s.date.slice(0, 4));
+    if (Number.isFinite(y) && y > 1900 && y < earliest) earliest = y;
+  }
+  for (const b of books) {
+    for (const r of finishesOf(b)) {
+      const y = new Date(r.finishedAt).getFullYear();
+      if (y > 1900 && y < earliest) earliest = y;
+    }
+  }
+  const years: number[] = [];
+  for (let y = current; y >= earliest; y--) if (isWrappedAvailable(books, sessions, y)) years.push(y);
+  return years;
 }
 
 /**

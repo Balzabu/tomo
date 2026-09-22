@@ -7,6 +7,7 @@ import { toDateKey } from '@/lib/utils';
 import { base64ToCover, coverToBase64, isLocalCover } from '@/lib/covers';
 import { normalizeIsbn } from '@/lib/isbn';
 import { sanitizeReads } from '@/lib/reads';
+import { toGoodreadsCsv } from '@/lib/csvExport';
 
 // Import sanitisation: never trust a hand-edited backup file.
 
@@ -224,6 +225,28 @@ export async function exportData(data: AppData, dialogTitle: string): Promise<bo
       dialogTitle,
       UTI: 'public.json',
     });
+    return true;
+  }
+  return false;
+}
+
+let lastCsvUri: string | null = null;
+
+/** Write the library as a Goodreads-style CSV and open the share sheet. */
+export async function exportCsv(data: AppData, dialogTitle: string): Promise<boolean> {
+  if (lastCsvUri) {
+    await FileSystem.deleteAsync(lastCsvUri, { idempotent: true }).catch(() => {});
+    lastCsvUri = null;
+  }
+  const fileUri = `${FileSystem.cacheDirectory}tomo-library-${toDateKey()}.csv`;
+  // BOM so Excel/Numbers open accented titles correctly; our own parser
+  // trims it away.
+  await FileSystem.writeAsStringAsync(fileUri, `\uFEFF${toGoodreadsCsv(data)}`, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+  lastCsvUri = fileUri;
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle, UTI: 'public.comma-separated-values-text' });
     return true;
   }
   return false;

@@ -8,7 +8,7 @@ import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { APP_NAME } from '@/lib/constants';
 import { Button, Card, SectionTitle } from '@/components/ui';
-import { exportData, importData, INVALID_BACKUP } from '@/lib/backup';
+import { exportCsv, exportData, importData, INVALID_BACKUP } from '@/lib/backup';
 import { PERSIST_FAILED } from '@/lib/storage';
 import { deleteCoverFile } from '@/lib/covers';
 import { parseBookCsv } from '@/lib/importSources';
@@ -22,7 +22,7 @@ export default function DataSettings() {
   const { t: tr } = useTranslation();
   // Which action is running: every button is disabled meanwhile (a second tap
   // used to open a second document picker), only the active one spins.
-  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | 'exportCsv' | null>(null);
 
   // Background page-count enrichment (after a CSV import) must stop if the user
   // leaves this screen, so it doesn't keep hitting the network and writing.
@@ -53,6 +53,26 @@ export default function DataSettings() {
     try {
       setBusy('export');
       const ok = await exportData(data, tr('settings.exportTitle'));
+      if (!ok) Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
+    } catch (e) {
+      Alert.alert(tr('common.error'), String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onExportCsv = async () => {
+    const s = useStore.getState();
+    if (s.books.length === 0) {
+      Alert.alert(tr('settings.nothingExportTitle'), tr('settings.nothingExportMsg'));
+      return;
+    }
+    try {
+      setBusy('exportCsv');
+      const ok = await exportCsv(
+        { books: s.books, sessions: [], notes: [], shelves: s.shelves, goals: [], version: s.version },
+        tr('settings.exportCsvTitle')
+      );
       if (!ok) Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
     } catch (e) {
       Alert.alert(tr('common.error'), String(e));
@@ -184,6 +204,12 @@ export default function DataSettings() {
         <SectionTitle>{tr('settings.importCsv')}</SectionTitle>
         <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.csvDesc')}</Text>
         <Button label={tr('settings.importCsv')} icon="library" variant="secondary" full loading={busy === 'csv'} disabled={busy != null} onPress={onImportCsv} />
+      </Card>
+
+      <Card style={{ gap: spacing.md }}>
+        <SectionTitle>{tr('settings.exportCsv')}</SectionTitle>
+        <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.exportCsvDesc')}</Text>
+        <Button label={tr('settings.exportCsv')} icon="document-text" variant="secondary" full loading={busy === 'exportCsv'} disabled={busy != null} onPress={onExportCsv} />
       </Card>
     </ScrollView>
   );

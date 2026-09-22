@@ -73,6 +73,7 @@ export default function BookDetailScreen() {
   const [progressOpen, setProgressOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState<null | 'note' | 'quote'>(null);
+  const [noteEdit, setNoteEdit] = useState<BookNote | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [shareNote, setShareNote] = useState<BookNote | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -422,6 +423,7 @@ export default function BookDetailScreen() {
             <NoteItem
               key={n.id}
               note={n}
+              onEdit={() => setNoteEdit(n)}
               onDelete={() => {
                 const removed = store.deleteNote(n.id);
                 if (!removed) return;
@@ -456,8 +458,12 @@ export default function BookDetailScreen() {
                   {formatDate(s.startTime, lang)}
                 </Text>
                 <Text style={[styles.body, { color: t.colors.textMuted }]}>
-                  {formatDuration(s.durationSeconds, units)}
-                  {s.pagesRead ? ` · ${s.pagesRead} ${tr('common.pageAbbr')}` : ''}
+                  {[
+                    s.durationSeconds > 0 ? formatDuration(s.durationSeconds, units) : null,
+                    s.pagesRead ? `${s.pagesRead} ${tr('common.pageAbbr')}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
                 <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
                   <Ionicons name="close" size={16} color={t.colors.textFaint} />
@@ -490,8 +496,24 @@ export default function BookDetailScreen() {
         initial={book.currentPage}
         max={book.pageCount}
         onClose={() => setProgressOpen(false)}
-        onSave={(p) => {
-          store.setProgress(book.id, p);
+        onSave={(p, logAsSession) => {
+          if (logAsSession && p > book.currentPage) {
+            // Progress typed in by hand still means pages were read: record an
+            // untimed session so pages/day goals, the heatmap and the year in
+            // review see them (pace calculations ignore 0-second sessions).
+            const now = Date.now();
+            store.addSession({
+              bookId: book.id,
+              startTime: now,
+              endTime: now,
+              durationSeconds: 0,
+              startPage: book.currentPage,
+              endPage: p,
+              pagesRead: p - book.currentPage,
+            });
+          } else {
+            store.setProgress(book.id, p);
+          }
           setProgressOpen(false);
         }}
       />
@@ -507,15 +529,24 @@ export default function BookDetailScreen() {
         }}
       />
       <NoteModal
-        open={noteOpen !== null}
-        type={noteOpen ?? 'note'}
-        onClose={() => setNoteOpen(null)}
+        open={noteOpen !== null || noteEdit !== null}
+        type={noteEdit?.type ?? noteOpen ?? 'note'}
+        initial={noteEdit ? { text: noteEdit.text, page: noteEdit.page } : undefined}
+        onClose={() => {
+          setNoteOpen(null);
+          setNoteEdit(null);
+        }}
         onSave={(text, page) => {
           if (text.trim()) {
-            store.addNote({ bookId: book.id, type: noteOpen ?? 'note', text: text.trim(), page });
+            if (noteEdit) {
+              store.updateNote(noteEdit.id, { text: text.trim(), page });
+            } else {
+              store.addNote({ bookId: book.id, type: noteOpen ?? 'note', text: text.trim(), page });
+            }
             void Haptics.selectionAsync();
           }
           setNoteOpen(null);
+          setNoteEdit(null);
         }}
       />
 
@@ -559,10 +590,12 @@ function MiniStat({ label, value, t }: { label: string; value: string; t: Return
 
 function NoteItem({
   note,
+  onEdit,
   onDelete,
   onShare,
 }: {
   note: BookNote;
+  onEdit: () => void;
   onDelete: () => void;
   onShare: () => void;
 }) {
@@ -579,14 +612,19 @@ function NoteItem({
         },
       ]}
     >
-      <View style={{ flex: 1 }}>
+      <Pressable
+        style={{ flex: 1 }}
+        onPress={onEdit}
+        accessibilityRole="button"
+        accessibilityLabel={isQuote ? tr('book.editQuote') : tr('book.editNote')}
+      >
         <Text style={[styles.noteText, { color: t.colors.text, fontStyle: isQuote ? 'italic' : 'normal' }]}>
           {isQuote ? `“${note.text}”` : note.text}
         </Text>
         {note.page != null ? (
           <Text style={[styles.notePage, { color: t.colors.textFaint }]}>{tr('common.pageAbbr')} {note.page}</Text>
         ) : null}
-      </View>
+      </Pressable>
       <View style={{ gap: 12, alignItems: 'center' }}>
         <Pressable onPress={onShare} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('wrapped.share')}>
           <Ionicons name="share-social-outline" size={16} color={t.colors.primary} />
@@ -610,17 +648,23 @@ function ProgressModal({
   initial: number;
   max?: number;
   onClose: () => void;
-  onSave: (page: number) => void;
+  onSave: (page: number, logAsSession: boolean) => void;
 }) {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const [val, setVal] = useState(String(initial));
+  const [logSession, setLogSession] = useState(true);
+  const parsed = parseInt(val, 10);
+  const advancing = Number.isFinite(parsed) && parsed > initial;
   return (
     <CenterModal
       open={open}
       onClose={onClose}
       title={tr('book.updateProgress')}
-      onShow={() => setVal(String(initial))}
+      onShow={() => {
+        setVal(String(initial));
+        setLogSession(true);
+      }}
     >
       <Text style={[styles.modalLabel, { color: t.colors.textMuted }]}>
         {max ? tr('book.currentPageOf', { n: max }) : tr('book.currentPage')}
@@ -633,15 +677,32 @@ function ProgressModal({
         selectTextOnFocus
         style={[styles.modalInput, { backgroundColor: t.colors.cardAlt, color: t.colors.text }]}
       />
+      {advancing ? (
+        <Pressable
+          onPress={() => setLogSession((v) => !v)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: logSession }}
+          style={styles.checkRow}
+        >
+          <Ionicons
+            name={logSession ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={logSession ? t.colors.primary : t.colors.textFaint}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.body, { color: t.colors.text }]}>{tr('book.logAsSession')}</Text>
+            <Text style={[styles.muted, { color: t.colors.textFaint, fontSize: 12 }]}>{tr('book.logAsSessionSub')}</Text>
+          </View>
+        </Pressable>
+      ) : null}
       <Button
         label={tr('common.save')}
         full
-        disabled={!Number.isFinite(parseInt(val, 10))}
+        disabled={!Number.isFinite(parsed)}
         onPress={() => {
-          const n = parseInt(val, 10);
           // An empty/garbled field must not silently reset progress to page 0.
-          if (!Number.isFinite(n)) return;
-          onSave(Math.max(0, n));
+          if (!Number.isFinite(parsed)) return;
+          onSave(Math.max(0, parsed), advancing && logSession);
         }}
       />
     </CenterModal>
@@ -693,11 +754,14 @@ function TextModal({
 function NoteModal({
   open,
   type,
+  initial,
   onClose,
   onSave,
 }: {
   open: boolean;
   type: 'note' | 'quote';
+  /** set when editing an existing note/quote */
+  initial?: { text: string; page?: number };
   onClose: () => void;
   onSave: (text: string, page?: number) => void;
 }) {
@@ -705,14 +769,17 @@ function NoteModal({
   const { t: tr } = useTranslation();
   const [val, setVal] = useState('');
   const [page, setPage] = useState('');
+  const title = initial
+    ? type === 'quote' ? tr('book.editQuote') : tr('book.editNote')
+    : type === 'quote' ? tr('book.newQuote') : tr('book.newNote');
   return (
     <CenterModal
       open={open}
       onClose={onClose}
-      title={type === 'quote' ? tr('book.newQuote') : tr('book.newNote')}
+      title={title}
       onShow={() => {
-        setVal('');
-        setPage('');
+        setVal(initial?.text ?? '');
+        setPage(initial?.page != null ? String(initial.page) : '');
       }}
     >
       <TextInput
@@ -793,6 +860,7 @@ const styles = StyleSheet.create({
   noteText: { fontSize: 14, lineHeight: 20 },
   notePage: { fontSize: 12, marginTop: 4 },
   sessionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   modalCard: { width: '100%', borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
