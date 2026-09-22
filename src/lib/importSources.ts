@@ -221,11 +221,12 @@ function mapStoryGraph(r: Record<string, string>): ImportedBook | null {
     addedAt: parseDate(r['Date Added']),
     startedAt: history.startedAt,
     finishedAt: status === 'finished' ? finished : undefined,
-    // Earlier completed ranges are dated history; a finished book whose last
-    // range is also the current cycle keeps only the earlier ones in `reads`.
-    reads: status === 'finished' ? history.reads : history.finishedAt != null
-      ? [...(history.reads ?? []), { startedAt: history.startedAt, finishedAt: history.finishedAt }]
-      : history.reads,
+    // Earlier ranges are dated history (StoryGraph lists several only when the
+    // book was read more than once). The last closed range is the current
+    // cycle for a finished book, and for anything else (dnf, paused, an odd
+    // "reading" row with no open range) it is the attempt that ended without a
+    // finish - so it must not be banked as one.
+    reads: history.reads,
     readCount: num(r['Read Count']),
     shelfNames: splitList(r['Tags']).length ? splitList(r['Tags']) : undefined,
   };

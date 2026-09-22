@@ -58,6 +58,18 @@ export const emptyAppData: AppData = {
   version: 1,
 };
 
+// All reads and writes of the library go through one queue: two overlapping
+// saves would otherwise race - the older write's stale-chunk removal could
+// delete chunks the newer write just stored, leaving a manifest that points
+// at nothing. (AsyncStorage itself orders operations, but a save is several
+// operations.) Errors propagate to the caller; the queue itself never breaks.
+let queue: Promise<unknown> = Promise.resolve();
+export function queued<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
 export function chunkKey(coll: Collection, i: number): string {
   return `${CHUNK_PREFIX}${coll}:${i}`;
 }
@@ -164,6 +176,43 @@ export interface LoadResult {
   rawV1?: string;
 }
 
+/** Read a v2 snapshot given its manifest text. The manifest and the chunks
+ *  are two separate reads, so a write landing in between (the app saving
+ *  while a widget refreshes) could pair one version's manifest with another's
+ *  chunks: the manifest is re-read afterwards and the read retried while it
+ *  keeps changing. null = unreadable (garbage manifest, missing/corrupt chunk). */
+async function readV2(kv: KV, metaRaw: string): Promise<LoadResult | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const manifest = parseManifest(metaRaw);
+    if (!manifest) return null;
+    const keys = chunkKeysOf(manifest);
+    let rows: readonly (readonly [string, string | null])[];
+    let metaAfter: string | null;
+    try {
+      rows = keys.length ? await kv.multiGet(keys) : [];
+      metaAfter = await kv.getItem(META_KEY);
+    } catch {
+      return null;
+    }
+    if (metaAfter != null && metaAfter !== metaRaw) {
+      metaRaw = metaAfter; // a write landed in between: read the new version
+      continue;
+    }
+    const byKey = new Map(rows.map(([k, v]) => [k, v]));
+    const data: AppData = { ...emptyAppData, version: manifest.version };
+    for (const coll of COLLECTIONS) {
+      const n = manifest.chunks[coll];
+      const values: (string | null | undefined)[] = [];
+      for (let i = 0; i < n; i++) values.push(byKey.get(chunkKey(coll, i)));
+      const items = decodeChunks(values);
+      if (items == null) return null;
+      (data as unknown as Record<Collection, unknown[]>)[coll] = items;
+    }
+    return { data, status: 'ok', manifest };
+  }
+  return null;
+}
+
 function parseManifest(raw: string): Manifest | null {
   try {
     const m = JSON.parse(raw) as Partial<Manifest>;
@@ -202,40 +251,35 @@ export async function loadFromKV(kv: KV, opts?: { readOnly?: boolean }): Promise
   }
 
   if (metaRaw != null) {
-    const manifest = parseManifest(metaRaw);
-    if (!manifest) return failed; // a manifest exists but is garbage: don't overwrite the chunks
-    let rows: readonly (readonly [string, string | null])[];
-    const keys = chunkKeysOf(manifest);
+    const v2 = await readV2(kv, metaRaw);
+    if (v2) {
+      if (!readOnly) {
+        // A leftover v1 blob (process died between the v2 write and the v1
+        // delete) is now redundant: v1 is never written again, so v2 is at
+        // least as fresh. Checked via getAllKeys - reading it could throw.
+        try {
+          const all = await kv.getAllKeys();
+          if (all.includes(V1_KEY)) await kv.removeItem(V1_KEY);
+        } catch {
+          // best-effort
+        }
+      }
+      return v2;
+    }
+    // v2 is unreadable (garbage manifest, missing or corrupt chunk). If the
+    // v1 blob is still there, the migration never completed - v1 is the
+    // intact source, so fall through and (re)migrate from it. Otherwise the
+    // data on disk stays untouched and writes are blocked.
+    let hasV1 = false;
     try {
-      rows = keys.length ? await kv.multiGet(keys) : [];
+      hasV1 = (await kv.getAllKeys()).includes(V1_KEY);
     } catch {
       return failed;
     }
-    const byKey = new Map(rows.map(([k, v]) => [k, v]));
-    const data: AppData = { ...emptyAppData, version: manifest.version };
-    for (const coll of COLLECTIONS) {
-      const n = manifest.chunks[coll];
-      const values: (string | null | undefined)[] = [];
-      for (let i = 0; i < n; i++) values.push(byKey.get(chunkKey(coll, i)));
-      const items = decodeChunks(values);
-      if (items == null) return failed;
-      (data as unknown as Record<Collection, unknown[]>)[coll] = items;
-    }
-    if (!readOnly) {
-      // A leftover v1 blob (process died between the v2 write and the v1
-      // delete) is now redundant: v1 is never written again, so v2 is at
-      // least as fresh. Checked via getAllKeys - reading it could throw.
-      try {
-        const all = await kv.getAllKeys();
-        if (all.includes(V1_KEY)) await kv.removeItem(V1_KEY);
-      } catch {
-        // best-effort
-      }
-    }
-    return { data, status: 'ok', manifest };
+    if (!hasV1) return failed;
   }
 
-  // No v2 yet: legacy blob or fresh install.
+  // No (usable) v2: legacy blob or fresh install.
   let rawV1: string | null;
   try {
     rawV1 = await kv.getItem(V1_KEY);
@@ -273,6 +317,9 @@ export interface SaveResult {
   manifest: Manifest;
   totalChars: number;
   oversizedItems: number;
+  /** stale chunks could not be removed: the caller should not trust its
+   *  previous-manifest bookkeeping and let the next save sweep by key listing */
+  cleanupFailed: boolean;
 }
 
 /** Write the library as manifest + chunks (one multiSet), then remove chunks
@@ -282,30 +329,43 @@ export async function saveToKV(kv: KV, data: AppData, prevManifest?: Manifest | 
   const enc = encodeData(data);
   await kv.multiSet(enc.pairs);
 
-  const stale: string[] = [];
-  if (prevManifest) {
-    for (const coll of COLLECTIONS) {
-      for (let i = enc.manifest.chunks[coll]; i < (prevManifest.chunks[coll] ?? 0); i++) {
-        stale.push(chunkKey(coll, i));
+  // Chunks beyond the new counts are leftovers of a larger previous write.
+  // With the previous manifest known this is a cheap arithmetic range; without
+  // it (first save of the session, or after a failed cleanup) list the keys.
+  let cleanupFailed = false;
+  const sweep = async () => {
+    const live = new Set(enc.pairs.map(([k]) => k));
+    const all = await kv.getAllKeys();
+    const stale = all.filter((k) => k.startsWith(CHUNK_PREFIX) && !live.has(k));
+    if (stale.length) await kv.multiRemove(stale);
+  };
+  try {
+    if (prevManifest) {
+      const stale: string[] = [];
+      for (const coll of COLLECTIONS) {
+        for (let i = enc.manifest.chunks[coll]; i < (prevManifest.chunks[coll] ?? 0); i++) {
+          stale.push(chunkKey(coll, i));
+        }
       }
+      if (stale.length) await kv.multiRemove(stale);
+    } else {
+      await sweep();
     }
-  } else {
+  } catch {
+    // Leftovers are ignored by the manifest (never read back), they just take
+    // space: try the full sweep once, else leave it to the next save.
     try {
-      const live = new Set(enc.pairs.map(([k]) => k));
-      const all = await kv.getAllKeys();
-      for (const k of all) if (k.startsWith(CHUNK_PREFIX) && !live.has(k)) stale.push(k);
+      await sweep();
     } catch {
-      // best-effort
+      cleanupFailed = true;
     }
   }
-  if (stale.length) {
-    try {
-      await kv.multiRemove(stale);
-    } catch {
-      // leftovers are ignored by the manifest; retried on a later save
-    }
-  }
-  return { manifest: enc.manifest, totalChars: enc.totalChars, oversizedItems: enc.oversizedItems };
+  return {
+    manifest: enc.manifest,
+    totalChars: enc.totalChars,
+    oversizedItems: enc.oversizedItems,
+    cleanupFailed,
+  };
 }
 
 /** Remove every v2 key and the legacy v1 blob (never the quarantine copy). */

@@ -23,8 +23,8 @@ import {
 } from '@/lib/storage';
 import { STORAGE_WARN_CHARS } from '@/lib/storageCore';
 import { toDateKey, uid } from '@/lib/utils';
-import { isbnKey, normalizeBookIsbns, normalizeIsbn } from '@/lib/isbn';
-import { withRereadStarted } from '@/lib/reads';
+import { isbnKey, keepIsbn, normalizeBookIsbns } from '@/lib/isbn';
+import { sanitizeReads, withRereadStarted } from '@/lib/reads';
 import { SHELF_COLORS } from '@/theme/theme';
 import { refreshWidgets } from '@/widgets/refresh';
 import { useSnackbar } from '@/store/useSnackbar';
@@ -189,20 +189,13 @@ AppState.addEventListener('change', (state) => {
  *  300 pages, and a finished book always sits on its last page. */
 function applyBookPatch(b: Book, patch: Partial<Book>): Book {
   const next = { ...b, ...patch };
-  if ('isbn' in patch) next.isbn = canonicalIsbn(patch.isbn);
+  if ('isbn' in patch) next.isbn = keepIsbn(patch.isbn);
   if (patch.pageCount !== undefined && next.pageCount) {
     if (next.status === 'finished' || next.currentPage > next.pageCount) {
       next.currentPage = next.pageCount;
     }
   }
   return next;
-}
-
-/** Store the canonical ISBN-13 when the value validates; keep the raw string
- *  otherwise (never drop user data over a checksum). */
-function canonicalIsbn(raw?: string): string | undefined {
-  if (!raw) return undefined;
-  return normalizeIsbn(raw) ?? raw;
 }
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -249,7 +242,7 @@ export const useStore = create<StoreState>((set, get) => ({
       title: result.title,
       authors: result.authors,
       coverUrl: result.coverUrl,
-      isbn: canonicalIsbn(result.isbn),
+      isbn: keepIsbn(result.isbn),
       pageCount: result.pageCount,
       description: result.description,
       publisher: result.publisher,
@@ -279,7 +272,7 @@ export const useStore = create<StoreState>((set, get) => ({
       title: input.title,
       authors: input.authors ?? [],
       coverUrl: input.coverUrl,
-      isbn: canonicalIsbn(input.isbn),
+      isbn: keepIsbn(input.isbn),
       pageCount: input.pageCount,
       description: input.description,
       status,
@@ -352,7 +345,7 @@ export const useStore = create<StoreState>((set, get) => ({
         id: uid('b_'),
         title: it.title.trim(),
         authors: it.authors ?? [],
-        isbn: canonicalIsbn(it.isbn),
+        isbn: keepIsbn(it.isbn),
         pageCount: it.pageCount,
         status: it.status,
         currentPage:
@@ -525,7 +518,8 @@ export const useStore = create<StoreState>((set, get) => ({
         const next = { ...b };
         if (patch.startedAt !== undefined) next.startedAt = patch.startedAt ?? undefined;
         if (patch.finishedAt !== undefined) next.finishedAt = patch.finishedAt ?? undefined;
-        if (patch.reads !== undefined) next.reads = patch.reads.length ? patch.reads : undefined;
+        // Consumers assume the history is ascending and free of duplicates.
+        if (patch.reads !== undefined) next.reads = sanitizeReads(patch.reads);
         // A finish can't precede its start.
         if (next.startedAt != null && next.finishedAt != null && next.finishedAt < next.startedAt) {
           next.startedAt = next.finishedAt;

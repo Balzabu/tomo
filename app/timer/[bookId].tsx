@@ -42,6 +42,7 @@ export default function TimerScreen() {
   const savingRef = useRef(false); // guards against a double "Save" tap
   const allowLeaveRef = useRef(false); // set when leaving intentionally (save/cancel)
   const initRef = useRef<string | null>(null); // bookId the bootstrap ran for
+  const wasRunningRef = useRef(false); // clock state when the finish form opened
   const navigation = useNavigation();
 
   // Elapsed is derived from the persisted session (wall-clock based), so it is
@@ -223,6 +224,7 @@ export default function TimerScreen() {
   };
 
   const goToFinish = () => {
+    wasRunningRef.current = useActiveSession.getState().active?.runningSince != null;
     useActiveSession.getState().pause();
     setEndPage(String(Math.max(book.currentPage, Number(startPage) || 0)));
     setPhase('finish');
@@ -312,8 +314,9 @@ export default function TimerScreen() {
             variant="ghost"
             full
             onPress={() => {
-              // goToFinish paused the clock; going back means "keep reading".
-              useActiveSession.getState().resume();
+              // goToFinish paused the clock; going back means "keep reading" -
+              // unless the user had paused it themselves before tapping Finish.
+              if (wasRunningRef.current) useActiveSession.getState().resume();
               setPhase('timing');
             }}
           />

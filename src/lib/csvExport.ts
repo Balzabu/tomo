@@ -6,6 +6,9 @@
 // StoryGraph. Sessions and notes have no place in this format; the JSON backup
 // carries those.
 import type { AppData, Book, ReadingStatus } from '@/types';
+// Relative with extension (not '@/lib/reads'): keeps the module runnable
+// under plain node for the check scripts, like reads.ts itself.
+import { readCountOf } from './reads.ts';
 
 export const CSV_COLUMNS = [
   'Book Id',
@@ -63,7 +66,7 @@ export function bookToCsvRow(b: Book, shelfNames: Map<string, string>): string[]
     // the list is comma-separated, so a shelf name can't contain one
     .map((n) => n.replace(/,/g, ' '));
   const year = b.publishedDate?.match(/\b(\d{4})\b/)?.[1] ?? '';
-  const readCount = Math.max(b.readCount ?? 0, (b.reads?.length ?? 0) + (b.finishedAt ? 1 : 0));
+  const readCount = readCountOf(b);
   return [
     b.id,
     csvTitle(b),

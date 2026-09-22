@@ -136,6 +136,10 @@ export function buildHeatmap(
   weeks = 17
 ): { cells: HeatCell[]; cols: number } {
   const byDay = sessionsByDay(sessions);
+  // Pages logged without a timer (0-second "update progress" sessions) count
+  // as activity too, at the lowest level - otherwise the streak lights up
+  // next to a blank heatmap cell.
+  const pagesDay = pagesByDay(sessions);
   const today = new Date();
   const dow = (today.getDay() + 6) % 7; // 0 = Monday
   const lastMonday = new Date(today);
@@ -159,6 +163,8 @@ export function buildHeatmap(
     if (cell.seconds > 0) {
       const ratio = cell.seconds / max;
       cell.level = ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+    } else if ((pagesDay.get(cell.date) ?? 0) > 0) {
+      cell.level = 1;
     }
   }
   return { cells, cols: weeks };

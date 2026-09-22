@@ -76,6 +76,14 @@ export function isbnKey(raw: string | null | undefined): string | undefined {
   return c || undefined;
 }
 
+/** What gets *stored*: the canonical ISBN-13 when the value validates,
+ *  otherwise the trimmed raw string (never drop user data over a checksum),
+ *  or undefined when there is nothing. */
+export function keepIsbn(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  return normalizeIsbn(raw) ?? (raw.trim() || undefined);
+}
+
 /** First candidate that normalises; otherwise the first non-empty one. */
 export function bestIsbn(candidates: (string | undefined | null)[]): string | undefined {
   for (const c of candidates) {

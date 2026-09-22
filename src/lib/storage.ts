@@ -5,6 +5,7 @@ import {
   emptyAppData,
   loadFromKV,
   Manifest,
+  queued,
   saveToKV,
 } from '@/lib/storageCore';
 
@@ -32,7 +33,7 @@ let lastManifest: Manifest | null = null;
 let footprint: { totalChars: number; oversizedItems: number } | null = null;
 
 export async function loadData(opts?: { readOnly?: boolean }): Promise<AppData> {
-  const res = await loadFromKV(AsyncStorage, opts);
+  const res = await queued(() => loadFromKV(AsyncStorage, opts));
   switch (res.status) {
     case 'ok':
       lastManifest = res.manifest ?? null;
@@ -69,8 +70,12 @@ export async function saveData(data: AppData, opts?: { force?: boolean }): Promi
   // be intact on disk. The caller surfaces this like any failed write.
   if (readFailed && !opts?.force) return false;
   try {
-    const r = await saveToKV(AsyncStorage, data, lastManifest);
-    lastManifest = r.manifest;
+    // Serialised with every other storage operation (see storageCore.queued):
+    // a debounced flush, a background flush and a restore can overlap.
+    const r = await queued(() => saveToKV(AsyncStorage, data, lastManifest));
+    // A failed stale-chunk cleanup means the arithmetic range can't be
+    // trusted next time: forget the manifest so the next save sweeps by key.
+    lastManifest = r.cleanupFailed ? null : r.manifest;
     footprint = { totalChars: r.totalChars, oversizedItems: r.oversizedItems };
     readFailed = false;
     return true;
@@ -94,7 +99,7 @@ export function lastSaveFootprint(): { totalChars: number; oversizedItems: numbe
 }
 
 export async function clearData(): Promise<void> {
-  await clearFromKV(AsyncStorage);
+  await queued(() => clearFromKV(AsyncStorage));
   lastManifest = null;
   footprint = null;
   readFailed = false;

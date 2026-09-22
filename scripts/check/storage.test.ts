@@ -69,3 +69,69 @@ const big = { books: Array.from({ length: 1000 }, (_, i) => book(i)), sessions: 
 // (j) empty collections encode to zero chunks
 { const e = encodeData({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 }); assert.equal(e.pairs.length, 1); assert.deepEqual(e.manifest.chunks, { books: 0, sessions: 0, notes: 0, shelves: 0, goals: 0 }); }
 console.log('storage: all assertions passed');
+
+// ---- review fixes ----
+import { queued } from '../../src/lib/storageCore.ts';
+
+// (k) concurrent saves are serialised through queued(): the older write's
+// stale-chunk removal can't delete the newer write's chunks
+{
+  const kv = makeKV();
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const slowKv = { ...kv, async multiRemove(keys: readonly string[]) { await delay(20); return kv.multiRemove(keys); } };
+  const first = await saveToKV(slowKv, big, null); // 6+ chunks of books
+  const small = { ...big, books: big.books.slice(0, 2), sessions: [] };
+  // A: shrink (prev = first), B: grow back (prev = first) - issued back to back
+  const a = queued(() => saveToKV(slowKv, small, first.manifest));
+  const b = queued(() => saveToKV(slowKv, big, first.manifest));
+  await Promise.all([a, b]);
+  const r = await loadFromKV(kv);
+  assert.equal(r.status, 'ok');
+  assert.deepEqual(r.data, big);
+}
+// (k2) a rejected queued call doesn't break the queue
+{
+  await queued(async () => { throw new Error('boom'); }).catch(() => {});
+  assert.equal(await queued(async () => 42), 42);
+}
+
+// (l) v2 unreadable (half-finished migration) but v1 still present → v1 is used and migrated
+{
+  const kv = makeKV(); const small = { ...big, books: big.books.slice(0, 3), sessions: big.sessions.slice(0, 5) };
+  kv.map.set(V1_KEY, JSON.stringify(small));
+  await saveToKV(kv, small, null); kv.map.delete(chunkKey('books', 0)); // torn v2
+  const r = await loadFromKV(kv); assert.equal(r.status, 'ok'); assert.deepEqual(r.data, small); assert.equal(r.migratedFromV1, true);
+  assert.equal(kv.map.has(V1_KEY), false); assert.deepEqual((await loadFromKV(kv)).data, small);
+}
+// (l2) v2 unreadable and no v1 → still read_failed (nothing overwritten)
+{ const kv = makeKV(); await saveToKV(kv, big, null); kv.map.delete(chunkKey('books', 0)); assert.equal((await loadFromKV(kv)).status, 'read_failed'); assert.ok(kv.map.has(META_KEY)); }
+
+// (m) a write landing between the manifest read and the chunk read → the load retries and returns the new version
+{
+  const kv = makeKV(); const small = { ...big, books: big.books.slice(0, 2), sessions: [] };
+  await saveToKV(kv, big, null);
+  let raced = false;
+  const racy = { ...kv, async multiGet(keys: readonly string[]) {
+    if (!raced) { raced = true; await saveToKV(kv, small, null); } // concurrent app write
+    return kv.multiGet(keys);
+  } };
+  const r = await loadFromKV(racy, { readOnly: true });
+  assert.equal(r.status, 'ok'); assert.deepEqual(r.data, small);
+}
+
+// (n) failed stale cleanup falls back to a key sweep; if that fails too, cleanupFailed is reported
+{
+  const kv = makeKV(); const first = await saveToKV(kv, big, null);
+  let calls = 0;
+  const flaky = { ...kv, async multiRemove(keys: readonly string[]) { calls++; if (calls === 1) throw new Error('busy'); return kv.multiRemove(keys); } };
+  const small = { ...big, books: big.books.slice(0, 1), sessions: [] };
+  const r = await saveToKV(flaky, small, first.manifest);
+  assert.equal(r.cleanupFailed, false);
+  assert.equal([...kv.map.keys()].filter((k) => k.startsWith(CHUNK_PREFIX)).length, 3); // meta + books:0 + shelves:0
+  const broken = { ...kv, async multiRemove() { throw new Error('busy'); } };
+  const r2 = await saveToKV(broken, big, r.manifest);
+  const r3 = await saveToKV(broken, small, r2.manifest);
+  assert.equal(r3.cleanupFailed, true);
+  assert.deepEqual((await loadFromKV(kv)).data, small); // manifest still authoritative despite leftovers
+}
+console.log('storage (review fixes): all assertions passed');
