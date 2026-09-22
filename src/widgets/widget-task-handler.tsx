@@ -3,6 +3,7 @@ import type { WidgetTaskHandlerProps } from 'react-native-android-widget';
 import { computeStats, buildHeatmap, computeGoalProgress } from '@/lib/stats';
 import { monthsShort, weekdayInitials } from '@/i18n/strings';
 import { migrateLegacyKeys } from '@/lib/migrate';
+import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
 import {
   bookTotalSeconds,
@@ -132,6 +133,22 @@ export async function renderForName(
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<void> {
   const name = props.widgetInfo.widgetName as WidgetName;
   if (!WIDGET_NAMES.includes(name)) return;
+  try {
+    await handle(props, name);
+  } catch (e) {
+    // An exception here leaves the widget stuck on its last frame (or blank
+    // right after placement). Fall back to the empty-library rendering.
+    console.warn('widget task failed', e);
+    try {
+      const ctx = await loadWidgetContext(emptyData);
+      props.renderWidget(await renderForName(name, ctx, props.widgetInfo.widgetId));
+    } catch {
+      // nothing more we can do
+    }
+  }
+}
+
+async function handle(props: WidgetTaskHandlerProps, name: WidgetName): Promise<void> {
   const widgetId = props.widgetInfo.widgetId;
 
   switch (props.widgetAction) {

@@ -27,7 +27,19 @@ export default function RemindersSettings() {
   const fmtTime = (h: number, m: number) =>
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
+  // The permission prompt / scheduling is async: block the switch meanwhile so
+  // a second flip can't race the first.
+  const [pending, setPending] = useState(false);
   const applyReminder = async (enabled: boolean, h: number, m: number) => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await applyReminderInner(enabled, h, m);
+    } finally {
+      setPending(false);
+    }
+  };
+  const applyReminderInner = async (enabled: boolean, h: number, m: number) => {
     if (enabled) {
       const ok = await requestNotificationPermission(tr('notif.channelReminders'));
       if (!ok) {
@@ -67,6 +79,7 @@ export default function RemindersSettings() {
           <Text style={[styles.label, { color: t.colors.text }]}>{tr('settings.reminderEnable')}</Text>
           <Switch
             value={reminderEnabled}
+            disabled={pending}
             onValueChange={(v) => void applyReminder(v, reminderHour, reminderMinute)}
             trackColor={{ true: t.colors.primary, false: t.colors.border }}
             thumbColor="#ffffff"

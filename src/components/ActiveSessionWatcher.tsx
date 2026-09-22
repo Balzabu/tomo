@@ -10,6 +10,7 @@ import { useStore, useBook } from '@/store/useStore';
 import { dismissSessionNotification } from '@/lib/notifications';
 import { SessionEditor, SessionDraft } from '@/components/SessionEditor';
 import { useTranslation } from '@/i18n';
+import { MAX_SESSION_MINUTES } from '@/lib/utils';
 
 /**
  * App-wide guardian for the active reading session. It:
@@ -62,7 +63,17 @@ export function ActiveSessionWatcher() {
     }
   }, [ready, navBookId, onTimer]);
 
+  // Two estimates: the safe one stops at the last heartbeat (written every
+  // 15 s in the foreground and when backgrounding); the generous one counts
+  // until now, for the common "phone face-down, screen off, OS killed the
+  // app" paper-book session that the heartbeat can't see.
   const estMinutes = active ? Math.max(1, Math.round(sessionElapsedAtLastTick(active) / 60)) : 0;
+  const untilNowMinutes = (() => {
+    if (!active?.orphanRunningSince) return estMinutes;
+    const extra = Math.max(0, Date.now() - Math.max(active.orphanRunningSince, active.lastTick)) / 1000;
+    return Math.min(MAX_SESSION_MINUTES, Math.max(estMinutes, Math.round((sessionElapsedAtLastTick(active) + extra) / 60)));
+  })();
+  const [chosenMinutes, setChosenMinutes] = useState(0);
 
   // Prompt once to recover an orphaned session.
   const canPrompt =
@@ -74,13 +85,22 @@ export function ActiveSessionWatcher() {
       discard(); // book was deleted - nothing to recover
       return;
     }
+    const open = (minutes: number) => {
+      setChosenMinutes(minutes);
+      setEditorVisible(true);
+    };
+    const offerUntilNow = untilNowMinutes > estMinutes;
     Alert.alert(
       tr('timer.recoverTitle'),
-      tr('timer.recoverMsg', { title: book.title, n: estMinutes }),
+      `${tr('timer.recoverMsg', { title: book.title, n: estMinutes })}\n\n${tr('timer.recoverHint', { n: estMinutes })}`,
       [
         { text: tr('timer.recoverDiscard'), style: 'destructive', onPress: discard },
-        { text: tr('timer.saveSession'), onPress: () => setEditorVisible(true) },
-      ]
+        ...(offerUntilNow
+          ? [{ text: tr('timer.recoverSaveNow', { n: untilNowMinutes }), onPress: () => open(untilNowMinutes) }]
+          : []),
+        { text: tr('timer.recoverSaveTick', { n: estMinutes }), onPress: () => open(estMinutes) },
+      ],
+      { cancelable: false }
     );
   }, [canPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -118,11 +138,14 @@ export function ActiveSessionWatcher() {
       title={tr('timer.recoverTitle')}
       defaultStartPage={book?.currentPage}
       pageCount={book?.pageCount}
-      defaultMinutes={estMinutes}
+      defaultMinutes={chosenMinutes || estMinutes}
       defaultDayTs={active?.startedAt}
       onClose={() => {
+        // Closing the editor (cancel, tap outside, back) must not silently
+        // destroy the session: go back to the prompt, where "discard" is an
+        // explicit choice.
         setEditorVisible(false);
-        discard(); // closing without saving drops the orphan
+        promptedRef.current = false;
       }}
       onSave={(draft) => {
         onSaveRecovered(draft);

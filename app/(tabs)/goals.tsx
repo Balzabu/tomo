@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '@/store/useStore';
 import { GoalType } from '@/types';
@@ -16,6 +18,7 @@ import { useTranslation } from '@/i18n';
 import { Button, Card, ProgressBar } from '@/components/ui';
 import { Dialog } from '@/components/Dialog';
 import { computeGoalProgress } from '@/lib/stats';
+import { toDateKey } from '@/lib/utils';
 
 interface GoalMeta {
   icon: keyof typeof Ionicons.glyphMap;
@@ -65,7 +68,15 @@ export default function GoalsScreen() {
   const deleteGoal = useStore((s) => s.deleteGoal);
 
   const [editing, setEditing] = useState<GoalType | null>(null);
-  const year = new Date().getFullYear();
+  // Daily goals are anchored to "today"; the tab can stay mounted across
+  // midnight, so re-anchor on every focus (same idea as the stats tab).
+  const [todayKey, setTodayKey] = useState(() => toDateKey());
+  useFocusEffect(
+    useCallback(() => {
+      setTodayKey(toDateKey());
+    }, [])
+  );
+  const year = Number(todayKey.slice(0, 4));
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 40 }}>
@@ -114,7 +125,7 @@ export default function GoalsScreen() {
                 <Text style={[styles.cardTitle, { color: t.colors.text }]}>{tr(meta.titleKey)}</Text>
                 <Text style={[styles.cardHint, { color: t.colors.textFaint }]}>{tr(meta.labelKey)}</Text>
               </View>
-              <Pressable onPress={() => setEditing(type)} hitSlop={8}>
+              <Pressable onPress={() => setEditing(type)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('book.editLabel')}>
                 <Ionicons name="create-outline" size={20} color={t.colors.textMuted} />
               </Pressable>
             </View>
@@ -162,8 +173,12 @@ export default function GoalsScreen() {
           const g = goals.find(
             (x) => x.type === type && (type === 'books_per_year' ? x.year === year : true)
           );
-          if (g) deleteGoal(g.id);
           setEditing(null);
+          if (!g) return;
+          Alert.alert(tr('goals.removeTitle'), tr('goals.removeMsg'), [
+            { text: tr('common.cancel'), style: 'cancel' },
+            { text: tr('goals.remove'), style: 'destructive', onPress: () => deleteGoal(g.id) },
+          ]);
         }}
       />
     </ScrollView>

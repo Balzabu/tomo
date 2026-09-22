@@ -421,7 +421,14 @@ export default function BookDetailScreen() {
             <NoteItem
               key={n.id}
               note={n}
-              onDelete={() => store.deleteNote(n.id)}
+              onDelete={() => {
+                const removed = store.deleteNote(n.id);
+                if (!removed) return;
+                showSnackbar(tr('note.deleted'), {
+                  actionLabel: tr('common.undo'),
+                  onAction: () => store.restoreNote(removed),
+                });
+              }}
               onShare={() => setShareNote(n)}
             />
           ))
@@ -451,7 +458,7 @@ export default function BookDetailScreen() {
                   {formatDuration(s.durationSeconds)}
                   {s.pagesRead ? ` · ${s.pagesRead} ${tr('common.pageAbbr')}` : ''}
                 </Text>
-                <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8}>
+                <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
                   <Ionicons name="close" size={16} color={t.colors.textFaint} />
                 </Pressable>
               </Pressable>
@@ -580,10 +587,10 @@ function NoteItem({
         ) : null}
       </View>
       <View style={{ gap: 12, alignItems: 'center' }}>
-        <Pressable onPress={onShare} hitSlop={8}>
+        <Pressable onPress={onShare} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('wrapped.share')}>
           <Ionicons name="share-social-outline" size={16} color={t.colors.primary} />
         </Pressable>
-        <Pressable onPress={onDelete} hitSlop={8}>
+        <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
           <Ionicons name="close" size={16} color={t.colors.textFaint} />
         </Pressable>
       </View>

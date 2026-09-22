@@ -307,7 +307,16 @@ export default function TimerScreen() {
 
         <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
           <Button label={tr('timer.saveSession')} icon="save" full disabled={!!pageErr} onPress={save} />
-          <Button label={tr('common.back')} variant="ghost" full onPress={() => setPhase('timing')} />
+          <Button
+            label={tr('common.back')}
+            variant="ghost"
+            full
+            onPress={() => {
+              // goToFinish paused the clock; going back means "keep reading".
+              useActiveSession.getState().resume();
+              setPhase('timing');
+            }}
+          />
         </View>
       </View>
     );
@@ -326,6 +335,8 @@ export default function TimerScreen() {
 
       <Pressable
         onPress={toggle}
+        accessibilityRole="button"
+        accessibilityLabel={running ? tr('timer.paused') : tr('timer.reading')}
         style={[styles.playBtn, { backgroundColor: t.colors.primary }]}
       >
         <Ionicons name={running ? 'pause' : 'play'} size={42} color={onColor(t.colors.primary)} />

@@ -101,6 +101,14 @@ export default function LibraryScreen() {
     [selectMode]
   );
 
+  // The active shelf filter can outlive its shelf (deleted in Settings or by
+  // clear-all): fall back to "all" instead of an empty list with no chip lit.
+  useEffect(() => {
+    if (filter.kind === 'shelf' && !shelves.some((sh) => sh.id === filter.id)) {
+      setFilter({ kind: 'all' });
+    }
+  }, [filter, shelves]);
+
   // Leave selection mode automatically once nothing is selected.
   useEffect(() => {
     if (selectMode && selected.size === 0) setSelectMode(false);
@@ -225,7 +233,7 @@ export default function LibraryScreen() {
                 style={[styles.searchInput, { color: t.colors.text }]}
               />
               {query ? (
-                <Pressable onPress={() => setQuery('')}>
+                <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.clear')}>
                   <Ionicons name="close-circle" size={18} color={t.colors.textFaint} />
                 </Pressable>
               ) : null}
@@ -357,7 +365,7 @@ export default function LibraryScreen() {
             },
           ]}
         >
-          <Pressable onPress={exitSelect} hitSlop={8} style={styles.selectBtn}>
+          <Pressable onPress={exitSelect} hitSlop={8} style={styles.selectBtn} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
             <Ionicons name="close" size={22} color={t.colors.text} />
           </Pressable>
           <Text style={[styles.selectCount, { color: t.colors.text }]}>

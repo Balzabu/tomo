@@ -20,7 +20,9 @@ const MAX_CSV_BYTES = 16 * 1024 * 1024;
 export default function DataSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const [busy, setBusy] = useState(false);
+  // Which action is running: every button is disabled meanwhile (a second tap
+  // used to open a second document picker), only the active one spins.
+  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
 
   // Background page-count enrichment (after a CSV import) must stop if the user
   // leaves this screen, so it doesn't keep hitting the network and writing.
@@ -42,13 +44,13 @@ export default function DataSettings() {
       version: s.version,
     };
     try {
-      setBusy(true);
+      setBusy('export');
       const ok = await exportData(data, tr('settings.exportTitle'));
       if (!ok) Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
     } catch (e) {
       Alert.alert(tr('common.error'), String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -59,7 +61,7 @@ export default function DataSettings() {
         text: tr('settings.chooseFile'),
         onPress: async () => {
           try {
-            setBusy(true);
+            setBusy('import');
             const imported = await importData();
             if (imported) {
               const oldCovers = useStore.getState().books.map((b) => b.coverUrl);
@@ -81,7 +83,7 @@ export default function DataSettings() {
                 : String(e);
             Alert.alert(tr('settings.importFailTitle'), msg);
           } finally {
-            setBusy(false);
+            setBusy(null);
           }
         },
       },
@@ -117,7 +119,7 @@ export default function DataSettings() {
 
   const onImportCsv = async () => {
     try {
-      setBusy(true);
+      setBusy('csv');
       const res = await DocumentPicker.getDocumentAsync({
         type: [
           'text/csv',
@@ -158,7 +160,7 @@ export default function DataSettings() {
     } catch (e) {
       Alert.alert(tr('settings.importFailTitle'), String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -167,14 +169,14 @@ export default function DataSettings() {
       <Card style={{ gap: spacing.md }}>
         <SectionTitle>{tr('settings.backup')}</SectionTitle>
         <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.backupDesc')}</Text>
-        <Button label={tr('settings.export')} icon="cloud-upload" variant="secondary" full loading={busy} onPress={onExport} />
-        <Button label={tr('settings.import')} icon="cloud-download" variant="secondary" full onPress={onImport} />
+        <Button label={tr('settings.export')} icon="cloud-upload" variant="secondary" full loading={busy === 'export'} disabled={busy != null} onPress={onExport} />
+        <Button label={tr('settings.import')} icon="cloud-download" variant="secondary" full loading={busy === 'import'} disabled={busy != null} onPress={onImport} />
       </Card>
 
       <Card style={{ gap: spacing.md }}>
         <SectionTitle>{tr('settings.importCsv')}</SectionTitle>
         <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.csvDesc')}</Text>
-        <Button label={tr('settings.importCsv')} icon="library" variant="secondary" full onPress={onImportCsv} />
+        <Button label={tr('settings.importCsv')} icon="library" variant="secondary" full loading={busy === 'csv'} disabled={busy != null} onPress={onImportCsv} />
       </Card>
     </ScrollView>
   );

@@ -69,7 +69,9 @@ interface StoreState extends AppData {
   // Notes
   addNote: (n: Omit<BookNote, 'id' | 'createdAt'>) => BookNote;
   updateNote: (id: string, patch: Partial<BookNote>) => void;
-  deleteNote: (id: string) => void;
+  deleteNote: (id: string) => BookNote | undefined;
+  /** Put a just-deleted note back (delete-undo). */
+  restoreNote: (note: BookNote) => void;
 
   // Shelves
   addShelf: (input: { name: string; color?: string; icon?: string; emoji?: string }) => Shelf;
@@ -616,7 +618,18 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deleteNote: (id) => {
+    const removed = get().notes.find((n) => n.id === id);
     set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }));
+    persist(get);
+    return removed;
+  },
+
+  restoreNote: (note) => {
+    set((s) => {
+      if (s.notes.some((n) => n.id === note.id)) return s;
+      if (!s.books.some((b) => b.id === note.bookId)) return s; // book gone meanwhile
+      return { notes: [note, ...s.notes] };
+    });
     persist(get);
   },
 

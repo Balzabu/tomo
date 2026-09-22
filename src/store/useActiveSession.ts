@@ -19,6 +19,10 @@ export interface ActiveSession {
   lastTick: number;
   /** id of the ongoing notification, so it can be dismissed when the session ends */
   notificationId?: string;
+  /** For a session recovered after a process kill: when its last running
+   *  stretch began. The recovery prompt uses it to offer "count until now"
+   *  (phone-down reading with the screen off) next to the safe estimate. */
+  orphanRunningSince?: number;
 }
 
 /** Elapsed seconds as of `now`, honouring the running/paused state. */
@@ -95,6 +99,7 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
           ...s,
           accumulatedSeconds: sessionElapsedAtLastTick(s),
           runningSince: null,
+          orphanRunningSince: s.runningSince ?? s.orphanRunningSince,
         };
         persist(frozen);
         set({ active: frozen, hydrated: true });
@@ -137,7 +142,12 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
     const { active } = get();
     if (!active || active.runningSince != null) return;
     const now = Date.now();
-    const next: ActiveSession = { ...active, runningSince: now, lastTick: now };
+    const next: ActiveSession = {
+      ...active,
+      runningSince: now,
+      lastTick: now,
+      orphanRunningSince: undefined, // adopted again: no longer an orphan
+    };
     set({ active: next });
     persist(next);
   },
