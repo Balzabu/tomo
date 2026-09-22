@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, type Href } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
-import { useTranslation, localizedWeekdaysShort } from '@/i18n';
+import { useTranslation, localizedWeekdaysShort, durationUnits, formatInt } from '@/i18n';
 import { buildHeatmap, computeInsights, computeStats, latestWrappedYear, recentDailyPages } from '@/lib/stats';
 import { BarChart, Heatmap, StatTile } from '@/components/charts';
 import { Button, Card, EmptyState, SectionTitle } from '@/components/ui';
@@ -64,12 +64,12 @@ export default function StatsScreen() {
           icon={<Ionicons name="checkmark-done" size={18} color={t.colors.success} />}
         />
         <StatTile
-          value={stats.totalPagesRead.toLocaleString()}
+          value={formatInt(stats.totalPagesRead, lang)}
           label={tr('stats.pagesRead')}
           icon={<Ionicons name="document-text" size={18} color={t.colors.primary} />}
         />
         <StatTile
-          value={formatDuration(stats.totalSeconds)}
+          value={formatDuration(stats.totalSeconds, durationUnits(lang))}
           label={tr('stats.readingTime')}
           icon={<Ionicons name="time" size={18} color={t.colors.accent} />}
         />

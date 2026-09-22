@@ -82,6 +82,12 @@ Type-check with:
 npx tsc --noEmit
 ```
 
+The pure modules (ISBN handling, CSV parsing, read history, chunked storage) have assertion scripts that run under plain Node 22+, without a device or a bundler:
+
+```bash
+npm run check
+```
+
 ## Build a release APK
 
 A helper script builds signed Android artifacts on Linux or WSL:
@@ -122,11 +128,11 @@ src/
 assets/   plugins/   screenshots/   android/
 ```
 
-All data is saved locally with AsyncStorage on every change.
+All data is saved locally with AsyncStorage on every change, split into per-collection chunks (see `src/lib/storageCore.ts`) so no single record can hit Android's 2MB row read limit.
 
 ## Contributing
 
-Issues and pull requests are welcome. If you change UI text, keep the six translation files in `src/i18n` in sync, and run `npx tsc --noEmit` before opening a PR.
+Issues and pull requests are welcome. If you change UI text, keep the six language blocks in `src/i18n/strings.ts` in sync (every key must exist in all six), and run `npx tsc --noEmit` and `npm run check` before opening a PR.
 
 ## License
 
@@ -136,4 +142,4 @@ Tomo is released under the GNU General Public License v3.0. See the [LICENSE](./
 
 Everything you create (books, sessions, notes, shelves, goals, custom covers) is stored only on your device with AsyncStorage. There is no account, no analytics, no ads, and no third-party tracking, and nothing is uploaded to a server.
 
-The app makes network requests only when you search for a book or look up an ISBN, to fetch public data from Google Books and Open Library. Those requests contain only your search terms, with no personal identifiers. The camera is used only to scan ISBN barcodes, which are read on the device and never uploaded.
+The app makes network requests only to fetch public data from Google Books and Open Library: when you search for a book or look up an ISBN (including the page-count lookup after a CSV import), when you verify an optional Google Books API key, and when it displays a cover that came from one of those catalogs (covers are stored as URLs and loaded on demand, also in the widgets; a cover you pick from your photos is stored on the device). Those requests contain only search terms, ISBNs or cover URLs, with no personal identifiers. The camera is used only to scan ISBN barcodes, which are read on the device and never uploaded.

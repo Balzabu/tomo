@@ -57,7 +57,7 @@ export function CurrentlyReadingWidget({ theme, t, book, index = 0, total = 0 }:
   const pct = book.pct;
   const stats =
     `${book.pageCount ? `${t('common.pageAbbr')} ${book.currentPage}/${book.pageCount}` : `${t('common.pageAbbr')} ${book.currentPage}`}` +
-    ` · ${formatDuration(book.totalSeconds)}` +
+    ` · ${formatDuration(book.totalSeconds, { h: t('unit.hourAbbr'), m: t('unit.minAbbr'), s: t('unit.secAbbr') })}` +
     (book.streak > 0 ? ` · 🔥${book.streak}` : '');
 
   return (

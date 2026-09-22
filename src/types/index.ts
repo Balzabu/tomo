@@ -130,6 +130,14 @@ export interface AppData {
   version: number;
 }
 
+// Library screen view preferences (persisted in settings).
+export type LibrarySort = 'recent' | 'title' | 'author' | 'rating' | 'progress' | 'finished' | 'started';
+export const LIBRARY_SORTS: LibrarySort[] = ['recent', 'title', 'author', 'rating', 'progress', 'finished', 'started'];
+export type LibraryFilter =
+  | { kind: 'all' }
+  | { kind: 'status'; status: ReadingStatus }
+  | { kind: 'shelf'; id: string };
+
 // A book parsed from a Goodreads/StoryGraph CSV, before it gets an id/shelves.
 export interface ImportedBook {
   title: string;

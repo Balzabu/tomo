@@ -22,5 +22,5 @@ Tomo ships as a signed APK attached to a GitHub Release. There is no app store.
    gh release create v1.0.0 tomo-v1.0.0.apk --title "Tomo v1.0.0" --notes "..."
    ```
 
-Back up `android/app/tomo-upload.keystore` and `android/keystore.properties` offline.
+Back up `android/app/tomo-release.keystore` and `android/keystore.properties` offline.
 If you lose the signing key you cannot ship updates that install over an existing copy.

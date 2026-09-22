@@ -33,7 +33,16 @@ export default function SearchScreen() {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqId = useRef(0);
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // The in-flight request, cancelled when a newer query starts or the screen
+  // is dismissed - otherwise a slow 3-source chain keeps running for nothing.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    },
+    []
+  );
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -41,6 +50,7 @@ export default function SearchScreen() {
       // Also invalidate any in-flight search, or its late response would
       // repopulate the list for a query the user already erased.
       reqId.current++;
+      abortRef.current?.abort();
       setLoading(false);
       setResults([]);
       setSearched(false);
@@ -48,14 +58,17 @@ export default function SearchScreen() {
     }
     debounce.current = setTimeout(async () => {
       const myId = ++reqId.current;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
       const isbn = isbnFromQuery(query);
       const r = isbn
-        ? await lookupByIsbn(isbn).then(({ result, offline }) => ({
+        ? await lookupByIsbn(isbn, { signal: controller.signal }).then(({ result, offline }) => ({
             results: result ? [result] : [],
             offline,
           }))
-        : await searchBooks(query);
+        : await searchBooks(query, { signal: controller.signal });
       // Ignore a stale response (newer search) or one that resolved after the
       // screen was dismissed.
       if (myId !== reqId.current || !mountedRef.current) return;

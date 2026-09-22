@@ -77,8 +77,9 @@ export async function validateGoogleApiKey(keyRaw: string): Promise<KeyValidatio
 }
 
 function googleAvailable(): boolean {
-  // With a key, always try Google (cooldown is only for the throttled keyless API).
-  return googleApiKey ? true : Date.now() >= googleBlockedUntil;
+  // A 429 pauses Google whether or not a key is set (a key raises the quota
+  // but can still be exhausted); entering a fresh key clears the cooldown.
+  return Date.now() >= googleBlockedUntil;
 }
 
 // Only accept http(s) covers (upgraded to https); reject file:/data:/other
@@ -86,7 +87,18 @@ function googleAvailable(): boolean {
 function httpsCover(url?: string): string | undefined {
   if (!url) return undefined;
   const upgraded = url.replace(/^http:\/\//i, 'https://');
-  return /^https:\/\//i.test(upgraded) ? upgraded : undefined;
+  return /^https:\/\//i.test(upgraded) ? cleanGoogleThumb(upgraded) : undefined;
+}
+
+// Google thumbnails (v1 and the legacy feed alike) can carry a page-curl
+// overlay (edge=curl) and a tiny zoom level; normalise to a clean zoom=1.
+function cleanGoogleThumb(url: string): string {
+  if (!/books\.google\.|googleusercontent\./i.test(url)) return url;
+  return url
+    .replace(/([?&])zoom=\d+/, '$1zoom=1')
+    .replace(/[?&]edge=curl/, (m) => (m[0] === '?' ? '?' : ''))
+    .replace(/\?&/, '?')
+    .replace(/[?&]$/, '');
 }
 
 // Strip the user's API key before logging a URL (it lands in logcat otherwise).
@@ -105,24 +117,41 @@ interface FetchResult<T> {
 // with no connection a sad "no results" actively misleads them.
 let lastNetworkFailureAt = 0;
 
-/** fetch JSON with a timeout; never throws - returns status + parsed body. */
-async function getJson<T>(url: string): Promise<FetchResult<T>> {
+/** fetch JSON with a timeout; never throws - returns status + parsed body.
+ *  `signal` lets a caller cancel (screen dismissed, newer query) on top of the
+ *  internal timeout. */
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<FetchResult<T>> {
   const controller = new AbortController();
   // Declared outside try so the throw path can clear it too, and kept armed
   // through res.json() so a slow body read is bounded by the same timeout.
   const timeout = setTimeout(() => controller.abort(), 10_000);
+  const onAbort = () => controller.abort();
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort);
   try {
     const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
     if (!res.ok) return { status: res.status, data: null };
     const ct = res.headers.get('content-type') ?? '';
     if (!ct.includes('json')) return { status: res.status, data: null };
-    return { status: res.status, data: (await res.json()) as T };
+    const text = await res.text();
+    try {
+      return { status: res.status, data: JSON.parse(text) as T };
+    } catch {
+      // A server that answered with garbage is not "no connection".
+      console.warn(`getJson: malformed JSON from ${redactUrl(url)}`);
+      return { status: res.status, data: null };
+    }
   } catch (e) {
-    console.warn(`getJson failed for ${redactUrl(url)}:`, String(e));
-    lastNetworkFailureAt = Date.now();
+    // Timeouts, DNS, airplane mode - and our own cancellation, which must not
+    // flip the UI into "offline".
+    if (!signal?.aborted) {
+      console.warn(`getJson failed for ${redactUrl(url)}:`, String(e));
+      lastNetworkFailureAt = Date.now();
+    }
     return { status: 0, data: null };
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -165,10 +194,10 @@ function mapGoogleVolume(v: GoogleVolume): BookSearchResult | null {
 }
 
 /** Returns null when Google is unavailable/rate-limited (caller should fall back). */
-async function googleSearch(q: string): Promise<BookSearchResult[] | null> {
+async function googleSearch(q: string, signal?: AbortSignal): Promise<BookSearchResult[] | null> {
   if (!googleAvailable()) return null;
   const url = `${GOOGLE}?q=${encodeURIComponent(q)}&maxResults=24&printType=books&country=US${keyParam()}`;
-  const { status, data } = await getJson<{ items?: GoogleVolume[] }>(url);
+  const { status, data } = await getJson<{ items?: GoogleVolume[] }>(url, signal);
   if (status === 429) {
     googleBlockedUntil = Date.now() + GOOGLE_COOLDOWN_MS;
     return null;
@@ -218,12 +247,7 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
   const pageStr = formats.find((f) => /pages?/i.test(f));
   const pageCount = pageStr ? parseInt(pageStr, 10) || undefined : undefined;
 
-  // Strip the page-curl overlay Google bakes into some feed thumbnails
-  // (edge=curl) and normalise to the standard zoom=1 thumbnail.
-  const thumb = e.link
-    ?.find((l) => l.rel?.includes('thumbnail'))
-    ?.href?.replace(/([?&])zoom=\d+/, '$1zoom=1')
-    .replace(/&edge=curl/, '');
+  const thumb = e.link?.find((l) => l.rel?.includes('thumbnail'))?.href;
 
   return {
     title,
@@ -239,18 +263,18 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
   };
 }
 
-async function gdataSearch(q: string): Promise<BookSearchResult[]> {
+async function gdataSearch(q: string, signal?: AbortSignal): Promise<BookSearchResult[]> {
   const url = `${GDATA}?q=${encodeURIComponent(q)}&alt=json&max-results=24`;
-  const { data } = await getJson<GFeed>(url);
+  const { data } = await getJson<GFeed>(url, signal);
   const entries = data?.feed?.entry ?? [];
   return entries
     .map(mapGEntry)
     .filter((b): b is BookSearchResult => b !== null);
 }
 
-async function gdataIsbn(isbn: string): Promise<BookSearchResult | null> {
+async function gdataIsbn(isbn: string, signal?: AbortSignal): Promise<BookSearchResult | null> {
   const url = `${GDATA}?q=isbn:${encodeURIComponent(isbn)}&alt=json`;
-  const { data } = await getJson<GFeed>(url);
+  const { data } = await getJson<GFeed>(url, signal);
   const entry = data?.feed?.entry?.[0];
   const mapped = entry ? mapGEntry(entry) : null;
   if (mapped) {
@@ -272,7 +296,9 @@ interface OLDoc {
 }
 
 function olCoverFromId(id?: number): string | undefined {
-  return id ? `${OPENLIB_COVERS}/b/id/${id}-M.jpg` : undefined;
+  // Same size as the ISBN variant, so a cover doesn't get sharper or blurrier
+  // depending on which lookup path found the book.
+  return id ? `${OPENLIB_COVERS}/b/id/${id}-L.jpg` : undefined;
 }
 
 function olCoverFromIsbn(isbn?: string): string | undefined {
@@ -298,11 +324,11 @@ function mapOLDoc(d: OLDoc): BookSearchResult | null {
   };
 }
 
-async function openLibrarySearch(q: string): Promise<BookSearchResult[]> {
+async function openLibrarySearch(q: string, signal?: AbortSignal): Promise<BookSearchResult[]> {
   const fields =
     'title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language';
   const url = `${OPENLIB}/search.json?q=${encodeURIComponent(q)}&limit=24&fields=${fields}`;
-  const { data } = await getJson<{ docs?: OLDoc[] }>(url);
+  const { data } = await getJson<{ docs?: OLDoc[] }>(url, signal);
   if (!data?.docs) return [];
   return data.docs
     .map(mapOLDoc)
@@ -353,9 +379,10 @@ export function isbnFromQuery(query: string): string | null {
  *  2. Google legacy GData feed - key-less, not throttled, great IT coverage
  *  3. Open Library - final safety net
  */
-export async function searchBooks(query: string): Promise<SearchOutcome> {
+export async function searchBooks(query: string, opts?: { signal?: AbortSignal }): Promise<SearchOutcome> {
   const q = query.trim();
   if (!q) return { results: [], offline: false };
+  const signal = opts?.signal;
   const startedAt = Date.now();
   const outcome = (results: BookSearchResult[]): SearchOutcome => ({
     results,
@@ -363,19 +390,22 @@ export async function searchBooks(query: string): Promise<SearchOutcome> {
   });
 
   if (googleApiKey) {
-    const v1 = await googleSearch(q);
+    const v1 = await googleSearch(q, signal);
     if (v1 && v1.length > 0) return outcome(dedupe(v1));
   }
+  if (signal?.aborted) return outcome([]);
 
-  const gdata = await gdataSearch(q);
+  const gdata = await gdataSearch(q, signal);
   if (gdata.length > 0) return outcome(dedupe(gdata));
+  if (signal?.aborted) return outcome([]);
 
-  const ol = await openLibrarySearch(q);
+  const ol = await openLibrarySearch(q, signal);
   return outcome(dedupe(ol));
 }
 
 /** Lookup a single book by ISBN (used by the barcode scanner). */
-export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
+export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSignal }): Promise<LookupOutcome> {
+  const signal = opts?.signal;
   const startedAt = Date.now();
   const outcome = (result: BookSearchResult | null): LookupOutcome => ({
     result,
@@ -389,7 +419,8 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
   // 1) Google Books v1 by ISBN - only worthwhile with a key (key-less = 429)
   if (googleApiKey && googleAvailable()) {
     const g = await getJson<{ items?: GoogleVolume[] }>(
-      `${GOOGLE}?q=isbn:${encodeURIComponent(isbn)}&country=US${keyParam()}`
+      `${GOOGLE}?q=isbn:${encodeURIComponent(isbn)}&country=US${keyParam()}`,
+      signal
     );
     if (g.status === 429) googleBlockedUntil = Date.now() + GOOGLE_COOLDOWN_MS;
     const gFirst = g.data?.items?.[0] ? mapGoogleVolume(g.data.items[0]) : null;
@@ -400,13 +431,17 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
     }
   }
 
+  if (signal?.aborted) return outcome(null);
+
   // 2) Google legacy GData feed - key-less, finds Italian editions OL misses
-  const gdata = await gdataIsbn(isbn);
+  const gdata = await gdataIsbn(isbn, signal);
   if (gdata) return outcome(gdata);
+  if (signal?.aborted) return outcome(null);
 
   // 3) Open Library search by ISBN (fast, gives covers + pages)
   const olSearch = await getJson<{ docs?: OLDoc[] }>(
-    `${OPENLIB}/search.json?isbn=${encodeURIComponent(isbn)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language`
+    `${OPENLIB}/search.json?isbn=${encodeURIComponent(isbn)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language`,
+    signal
   );
   const olDoc = olSearch.data?.docs?.[0] ? mapOLDoc(olSearch.data.docs[0]) : null;
   if (olDoc) {
@@ -415,6 +450,8 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
     return outcome(olDoc);
   }
 
+  if (signal?.aborted) return outcome(null);
+
   // 4) Open Library /isbn/{isbn}.json edition endpoint (last resort)
   const edition = await getJson<{
     title?: string;
@@ -422,10 +459,10 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
     publish_date?: string;
     publishers?: string[];
     authors?: { key: string }[];
-  }>(`${OPENLIB}/isbn/${isbn}.json`);
+  }>(`${OPENLIB}/isbn/${isbn}.json`, signal);
   const ed = edition.data;
   if (ed?.title) {
-    const authors = await resolveOpenLibraryAuthors(ed.authors);
+    const authors = await resolveOpenLibraryAuthors(ed.authors, signal);
     return outcome({
       title: ed.title,
       authors,
@@ -442,12 +479,13 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
 }
 
 async function resolveOpenLibraryAuthors(
-  authors?: { key: string }[]
+  authors?: { key: string }[],
+  signal?: AbortSignal
 ): Promise<string[]> {
   if (!authors?.length) return [];
   const names = await Promise.all(
     authors.slice(0, 3).map(async (a) => {
-      const { data } = await getJson<{ name?: string }>(`${OPENLIB}${a.key}.json`);
+      const { data } = await getJson<{ name?: string }>(`${OPENLIB}${a.key}.json`, signal);
       return data?.name ?? null;
     })
   );

@@ -16,7 +16,7 @@ import { useSnackbar } from '@/store/useSnackbar';
 import { BookNote, STATUS_ORDER } from '@/types';
 import { BookShareModal } from '@/components/BookShareModal';
 import { radius, spacing, useTheme } from '@/theme/theme';
-import { useTranslation, formatDate } from '@/i18n';
+import { useTranslation, formatDate, durationUnits } from '@/i18n';
 import { BookCover } from '@/components/BookCover';
 import { Button, Card, Pill, ProgressBar, SectionTitle } from '@/components/ui';
 import { RatingStars } from '@/components/RatingStars';
@@ -38,6 +38,7 @@ function publishedYear(date?: string): string | null {
 export default function BookDetailScreen() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
+  const units = durationUnits(lang);
   const { id } = useLocalSearchParams<{ id: string }>();
   const book = useBook(id);
   // Actions have stable identity, so read them once (non-reactive) instead of
@@ -318,7 +319,7 @@ export default function BookDetailScreen() {
           </Text>
         </View>
         <View style={styles.statRow}>
-          <MiniStat label={tr('book.totalTime')} value={formatDuration(totalSeconds)} t={t} />
+          <MiniStat label={tr('book.totalTime')} value={formatDuration(totalSeconds, units)} t={t} />
           <MiniStat label={tr('book.sessions')} value={String(sessions.length)} t={t} />
           {readCountOf(book) > 1 ? (
             <MiniStat label={tr('book.timesRead')} value={`${readCountOf(book)}×`} t={t} />
@@ -330,7 +331,7 @@ export default function BookDetailScreen() {
           <View style={[styles.etaRow, { backgroundColor: t.colors.cardAlt }]}>
             <Ionicons name="hourglass-outline" size={16} color={t.colors.primary} />
             <Text style={[styles.etaTxt, { color: t.colors.textMuted }]}>
-              {tr('book.etaLeft', { time: formatDuration(eta.secondsLeft), pages: eta.pagesLeft })}
+              {tr('book.etaLeft', { time: formatDuration(eta.secondsLeft, units), pages: eta.pagesLeft })}
             </Text>
           </View>
         ) : null}
@@ -455,7 +456,7 @@ export default function BookDetailScreen() {
                   {formatDate(s.startTime, lang)}
                 </Text>
                 <Text style={[styles.body, { color: t.colors.textMuted }]}>
-                  {formatDuration(s.durationSeconds)}
+                  {formatDuration(s.durationSeconds, units)}
                   {s.pagesRead ? ` · ${s.pagesRead} ${tr('common.pageAbbr')}` : ''}
                 </Text>
                 <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>

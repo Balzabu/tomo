@@ -13,8 +13,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '@/store/useStore';
+import { useSettings } from '@/store/useSettings';
 import { useSnackbar } from '@/store/useSnackbar';
-import { Book, MOOD_OPTIONS, ReadingPace, ReadingStatus, STATUS_ORDER } from '@/types';
+import {
+  Book,
+  LIBRARY_SORTS,
+  LibraryFilter,
+  LibrarySort,
+  MOOD_OPTIONS,
+  ReadingPace,
+  STATUS_ORDER,
+} from '@/types';
 import { onColor, radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { BookRow } from '@/components/BookRow';
@@ -22,10 +31,18 @@ import { BookCover } from '@/components/BookCover';
 import { Button, EmptyState, Pill, ProgressBar } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 
-type Filter = { kind: 'all' } | { kind: 'status'; status: ReadingStatus } | { kind: 'shelf'; id: string };
-type Sort = 'recent' | 'title' | 'author' | 'rating' | 'progress';
-const SORTS: Sort[] = ['recent', 'title', 'author', 'rating', 'progress'];
+type Filter = LibraryFilter;
+type Sort = LibrarySort;
+const SORTS: Sort[] = LIBRARY_SORTS;
 const PACES: ReadingPace[] = ['slow', 'medium', 'fast'];
+/** Sorts whose natural order is "newest / highest first". */
+const DESC_BY_DEFAULT: Sort[] = ['recent', 'rating', 'progress', 'finished', 'started'];
+
+/** Last finish of a book (current cycle or history), for the "date finished" sort. */
+function lastFinishedAt(b: Book): number {
+  const past = b.reads?.length ? b.reads[b.reads.length - 1].finishedAt : 0;
+  return Math.max(b.finishedAt ?? 0, past);
+}
 
 function progressOf(b: Book): number {
   if (b.status === 'finished') return 1;
@@ -43,8 +60,24 @@ export default function LibraryScreen() {
   const showSnackbar = useSnackbar((s) => s.show);
 
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>({ kind: 'all' });
-  const [sort, setSort] = useState<Sort>('recent');
+  // Sort, direction and filter survive restarts (persisted in settings).
+  const filter = useSettings((s) => s.libraryFilter);
+  const sort = useSettings((s) => s.librarySort);
+  const sortAsc = useSettings((s) => s.librarySortAsc);
+  const setLibraryView = useSettings((s) => s.setLibraryView);
+  const setFilter = useCallback((f: Filter) => setLibraryView({ libraryFilter: f }), [setLibraryView]);
+  const setSort = useCallback(
+    (next: Sort) => {
+      // Picking a sort resets the direction to that sort's natural one; tapping
+      // the active sort again flips it.
+      const flip = next === sort;
+      setLibraryView({
+        librarySort: next,
+        librarySortAsc: flip ? !sortAsc : !DESC_BY_DEFAULT.includes(next),
+      });
+    },
+    [setLibraryView, sort, sortAsc]
+  );
   const [sortOpen, setSortOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -176,6 +209,11 @@ export default function LibraryScreen() {
       list = list.filter((b) => (haystacks.get(b.id) ?? '').includes(q));
     }
     const sorted = [...list];
+    // Each comparator is written in its "natural" direction (see
+    // DESC_BY_DEFAULT); the user's direction choice flips it afterwards.
+    // Books without the sorted-by date always sink to the bottom.
+    const missingLast = (a: number, b: number, desc: boolean) =>
+      a === 0 && b !== 0 ? 1 : b === 0 && a !== 0 ? -1 : desc ? b - a : a - b;
     switch (sort) {
       case 'title':
         sorted.sort((a, b) => a.title.localeCompare(b.title));
@@ -189,11 +227,27 @@ export default function LibraryScreen() {
       case 'progress':
         sorted.sort((a, b) => progressOf(b) - progressOf(a) || b.addedAt - a.addedAt);
         break;
+      case 'finished':
+        sorted.sort((a, b) => missingLast(lastFinishedAt(a), lastFinishedAt(b), true) || b.addedAt - a.addedAt);
+        break;
+      case 'started':
+        sorted.sort((a, b) => missingLast(a.startedAt ?? 0, b.startedAt ?? 0, true) || b.addedAt - a.addedAt);
+        break;
       default:
         sorted.sort((a, b) => b.addedAt - a.addedAt);
     }
+    const natural = !DESC_BY_DEFAULT.includes(sort); // true = ascending is natural
+    if (sortAsc !== natural) {
+      if (sort === 'finished' || sort === 'started') {
+        // Keep "no date" at the bottom in both directions.
+        const has = (b: Book) => (sort === 'finished' ? lastFinishedAt(b) : b.startedAt ?? 0) !== 0;
+        const dated = sorted.filter(has).reverse();
+        return [...dated, ...sorted.filter((b) => !has(b))];
+      }
+      sorted.reverse();
+    }
     return sorted;
-  }, [books, filter, query, sort, moodFilter, paceFilter, haystacks]);
+  }, [books, filter, query, sort, sortAsc, moodFilter, paceFilter, haystacks]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -442,17 +496,26 @@ export default function LibraryScreen() {
               key={s}
               onPress={() => {
                 setSort(s);
-                setSortOpen(false);
+                if (!active) setSortOpen(false); // re-tapping the active sort flips direction
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               style={({ pressed }) => [
                 styles.sheetRow,
                 { backgroundColor: pressed ? t.colors.cardAlt : 'transparent' },
               ]}
             >
-              <Text style={[styles.sheetLabel, { color: active ? t.colors.primary : t.colors.text }]}>
+              <Text style={[styles.sheetLabel, { color: active ? t.colors.primary : t.colors.text, flex: 1 }]}>
                 {tr(`sort.${s}`)}
               </Text>
-              {active ? <Ionicons name="checkmark" size={20} color={t.colors.primary} /> : null}
+              {active ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.sheetSub, { color: t.colors.textMuted }]}>
+                    {tr(sortAsc ? 'sort.ascending' : 'sort.descending')}
+                  </Text>
+                  <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={18} color={t.colors.primary} />
+                </View>
+              ) : null}
             </Pressable>
           );
         })}

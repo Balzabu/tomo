@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { getLocales } from 'expo-localization';
+import type { DurationUnits } from '@/lib/utils';
 import { Language, useSettings } from '@/store/useSettings';
 import {
   dict,
@@ -59,6 +60,24 @@ export function useTranslation(): Translation {
   // re-run on every render (e.g. the daily-reminder scheduler, library filter).
   const t = useCallback<TFunc>((key, params) => translate(lang, key, params), [lang]);
   return { t, lang };
+}
+
+/** Unit suffixes for formatDuration() in the given language. */
+export function durationUnits(lang: Lang): DurationUnits {
+  return {
+    h: translate(lang, 'unit.hourAbbr'),
+    m: translate(lang, 'unit.minAbbr'),
+    s: translate(lang, 'unit.secAbbr'),
+  };
+}
+
+/** Group-separated integer in the app language (not the device locale). */
+export function formatInt(n: number, lang: Lang): string {
+  try {
+    return n.toLocaleString(lang);
+  } catch {
+    return String(n);
+  }
 }
 
 export function formatDate(ts: number, lang: Lang): string {

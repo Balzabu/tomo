@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
-import { useTranslation } from '@/i18n';
+import { durationUnits, formatInt, useTranslation } from '@/i18n';
 import { monthsShort } from '@/i18n/strings';
 import { computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
@@ -44,8 +44,8 @@ export default function WrappedScreen() {
   const months = monthsShort[lang] ?? monthsShort.en;
   const tiles = [
     { label: tr('wrapped.booksRead'), value: String(w.booksFinished) },
-    { label: tr('wrapped.pagesRead'), value: w.pagesRead.toLocaleString() },
-    { label: tr('wrapped.timeRead'), value: formatDuration(w.secondsRead) },
+    { label: tr('wrapped.pagesRead'), value: formatInt(w.pagesRead, lang) },
+    { label: tr('wrapped.timeRead'), value: formatDuration(w.secondsRead, durationUnits(lang)) },
     { label: tr('wrapped.longestStreak'), value: String(w.longestStreak) },
   ];
   const highlights: { label: string; value: string }[] = [];

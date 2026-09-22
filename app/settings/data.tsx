@@ -27,7 +27,14 @@ export default function DataSettings() {
   // Background page-count enrichment (after a CSV import) must stop if the user
   // leaves this screen, so it doesn't keep hitting the network and writing.
   const enrichCancelled = useRef(false);
-  useEffect(() => () => { enrichCancelled.current = true; }, []);
+  const enrichAbort = useRef(new AbortController());
+  useEffect(
+    () => () => {
+      enrichCancelled.current = true;
+      enrichAbort.current.abort();
+    },
+    []
+  );
 
   const onExport = async () => {
     const s = useStore.getState();
@@ -99,7 +106,7 @@ export default function DataSettings() {
     for (const b of targets) {
       if (enrichCancelled.current) break;
       try {
-        const { result: found } = await lookupByIsbn(b.isbn!);
+        const { result: found } = await lookupByIsbn(b.isbn!, { signal: enrichAbort.current.signal });
         // The store's patch application marks a finished book fully read once
         // its length is known, so only the page count needs sending.
         if (found?.pageCount) patches.push({ id: b.id, patch: { pageCount: found.pageCount } });

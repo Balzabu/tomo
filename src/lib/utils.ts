@@ -64,15 +64,24 @@ export function parsePageField(v: string): number | undefined {
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
-/** Human readable duration from seconds, e.g. "1h 24m" or "12m" or "45s". */
-export function formatDuration(seconds: number): string {
+export interface DurationUnits {
+  h: string;
+  m: string;
+  s: string;
+}
+const DEFAULT_UNITS: DurationUnits = { h: 'h', m: 'm', s: 's' };
+
+/** Human readable duration from seconds, e.g. "1h 24m" or "12m" or "45s".
+ *  Units are injected (see durationUnits() in src/i18n) - German writes
+ *  "Std."/"Min.". */
+export function formatDuration(seconds: number, units: DurationUnits = DEFAULT_UNITS): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m`;
-  return `${sec}s`;
+  if (h > 0) return `${h}${units.h} ${m}${units.m}`;
+  if (m > 0) return `${m}${units.m}`;
+  return `${sec}${units.s}`;
 }
 
 /** Clock format HH:MM:SS or MM:SS for the live timer. */
