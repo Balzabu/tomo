@@ -27,6 +27,13 @@ import { ReadingSession } from '@/types';
 import { estimateRemaining } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
 
+/** Four-digit year from a free-form published date ("2005-07-01", "July 2005",
+ *  "2005"). Open Library editions return prose, so a blind slice(0, 4) would
+ *  show "July". */
+function publishedYear(date?: string): string | null {
+  return date?.match(/\b(\d{4})\b/)?.[1] ?? null;
+}
+
 export default function BookDetailScreen() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
@@ -238,7 +245,7 @@ export default function BookDetailScreen() {
           {book.pageCount ? (
             <Text style={[styles.metaSmall, { color: t.colors.textFaint }]}>
               {tr('search.pages', { count: book.pageCount })}
-              {book.publishedDate ? ` · ${book.publishedDate.slice(0, 4)}` : ''}
+              {publishedYear(book.publishedDate) ? ` · ${publishedYear(book.publishedDate)}` : ''}
             </Text>
           ) : null}
           <View style={{ marginTop: 4 }}>
@@ -517,12 +524,14 @@ export default function BookDetailScreen() {
       <SessionEditor
         visible={sessionAddOpen}
         defaultStartPage={book.currentPage}
+        pageCount={book.pageCount}
         onClose={() => setSessionAddOpen(false)}
         onSave={(draft) => saveSession(draft, null)}
       />
       <SessionEditor
         visible={sessionEdit !== null}
         session={sessionEdit}
+        pageCount={book.pageCount}
         onClose={() => setSessionEdit(null)}
         onSave={(draft) => saveSession(draft, sessionEdit)}
       />
@@ -618,7 +627,13 @@ function ProgressModal({
       <Button
         label={tr('common.save')}
         full
-        onPress={() => onSave(Math.max(0, parseInt(val, 10) || 0))}
+        disabled={!Number.isFinite(parseInt(val, 10))}
+        onPress={() => {
+          const n = parseInt(val, 10);
+          // An empty/garbled field must not silently reset progress to page 0.
+          if (!Number.isFinite(n)) return;
+          onSave(Math.max(0, n));
+        }}
       />
     </CenterModal>
   );

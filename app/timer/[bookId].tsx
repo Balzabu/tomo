@@ -21,7 +21,7 @@ import { onColor, radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
 import { BookCover } from '@/components/BookCover';
-import { formatClock, formatTimeOfDay } from '@/lib/utils';
+import { formatClock, formatTimeOfDay, pagesError, parsePageField } from '@/lib/utils';
 import {
   requestNotificationPermission,
   showSessionNotification,
@@ -241,10 +241,12 @@ export default function TimerScreen() {
 
     const a = useActiveSession.getState().active;
     const startedAt = a?.startedAt ?? Date.now() - elapsed * 1000;
-    const sp = parseInt(startPage, 10);
-    const ep = parseInt(endPage, 10);
-    const validStart = Number.isFinite(sp) && sp >= 0 ? sp : undefined;
-    const validEnd = Number.isFinite(ep) && ep >= 0 ? ep : undefined;
+    const validStart = parsePageField(startPage);
+    const validEnd = parsePageField(endPage);
+    if (pagesError(validStart, validEnd, book.pageCount)) {
+      savingRef.current = false; // the form shows the error; let the user fix it
+      return;
+    }
     const pagesRead =
       validStart != null && validEnd != null ? Math.max(0, validEnd - validStart) : 0;
 
@@ -277,6 +279,7 @@ export default function TimerScreen() {
   };
 
   if (phase === 'finish') {
+    const pageErr = pagesError(parsePageField(startPage), parsePageField(endPage), book.pageCount);
     return (
       <View style={[styles.wrap, { backgroundColor: t.colors.bg }]}>
         <View style={styles.finishHead}>
@@ -290,14 +293,20 @@ export default function TimerScreen() {
           <Ionicons name="arrow-forward" size={20} color={t.colors.textFaint} />
           <PageField label={tr('timer.toPage')} value={endPage} onChange={setEndPage} t={t} />
         </View>
-        {book.pageCount ? (
+        {pageErr ? (
+          <Text style={[styles.totalPages, { color: t.colors.danger, fontWeight: '600' }]}>
+            {pageErr === 'order'
+              ? tr('session.pageOrder')
+              : tr('session.pageRange', { n: book.pageCount ?? 0 })}
+          </Text>
+        ) : book.pageCount ? (
           <Text style={[styles.totalPages, { color: t.colors.textFaint }]}>
             {tr('timer.ofPages', { n: book.pageCount })}
           </Text>
         ) : null}
 
         <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
-          <Button label={tr('timer.saveSession')} icon="save" full onPress={save} />
+          <Button label={tr('timer.saveSession')} icon="save" full disabled={!!pageErr} onPress={save} />
           <Button label={tr('common.back')} variant="ghost" full onPress={() => setPhase('timing')} />
         </View>
       </View>

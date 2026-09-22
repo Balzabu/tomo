@@ -21,6 +21,32 @@ export function dateKeyToDate(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/** Longest single session the manual editors accept (a full day). */
+export const MAX_SESSION_MINUTES = 24 * 60;
+
+export type PageError = 'order' | 'range';
+
+/** Validate an optional from/to page pair against the book length. An inflated
+ *  "to page" (3000 instead of 300) would otherwise poison pages read, pace,
+ *  goals, heatmap and wrapped via pagesRead. */
+export function pagesError(
+  start: number | undefined,
+  end: number | undefined,
+  pageCount?: number
+): PageError | null {
+  if (start != null && end != null && end < start) return 'order';
+  if (pageCount && pageCount > 0) {
+    if ((start != null && start > pageCount) || (end != null && end > pageCount)) return 'range';
+  }
+  return null;
+}
+
+/** parseInt for a numeric text field: undefined when empty/garbled/negative. */
+export function parsePageField(v: string): number | undefined {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 /** Human readable duration from seconds, e.g. "1h 24m" or "12m" or "45s". */
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));

@@ -117,6 +117,7 @@ export function ActiveSessionWatcher() {
       visible={editorVisible}
       title={tr('timer.recoverTitle')}
       defaultStartPage={book?.currentPage}
+      pageCount={book?.pageCount}
       defaultMinutes={estMinutes}
       defaultDayTs={active?.startedAt}
       onClose={() => {

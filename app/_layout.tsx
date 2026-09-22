@@ -17,6 +17,7 @@ import { useSettings } from '@/store/useSettings';
 import { useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { loadGoogleApiKey } from '@/lib/prefs';
+import { didReadFail } from '@/lib/storage';
 import { migrateLegacyKeys } from '@/lib/migrate';
 import { setGoogleApiKey } from '@/services/bookApi';
 import { scheduleDailyReminder, hasNotificationPermission } from '@/lib/notifications';
@@ -95,7 +96,13 @@ export default function RootLayout() {
   // delete-undo window. Runs once per launch, best-effort.
   useEffect(() => {
     if (!hydrated) return;
-    void reconcileCovers(useStore.getState().books.map((b) => b.coverUrl));
+    // If the library couldn't be read, the in-memory state is empty while the
+    // real data (and its cover references) may still be intact on disk -
+    // reconciling against it would delete every custom cover.
+    if (didReadFail()) return;
+    const books = useStore.getState().books;
+    if (books.length === 0) return;
+    void reconcileCovers(books.map((b) => b.coverUrl));
   }, [hydrated]);
 
   const base = t.dark ? DarkTheme : DefaultTheme;

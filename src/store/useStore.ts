@@ -128,6 +128,9 @@ function cancelPendingPersist(): void {
     persistTimer = null;
   }
   latestGet = null;
+  // Invalidate any in-flight flush too: if it fails after the replace it must
+  // neither re-arm the (now superseded) snapshot nor alarm the user.
+  ++flushSeq;
 }
 
 function persist(get: () => StoreState) {
@@ -362,11 +365,21 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   restoreBooks: ({ books, sessions, notes }) => {
-    set((st) => ({
-      books: [...books, ...st.books],
-      sessions: [...sessions, ...st.sessions],
-      notes: [...notes, ...st.notes],
-    }));
+    set((st) => {
+      // Shelves may have been deleted during the undo window: drop dangling
+      // ids rather than resurrecting references to shelves that no longer exist.
+      const shelfIds = new Set(st.shelves.map((sh) => sh.id));
+      const existing = new Set(st.books.map((b) => b.id));
+      const restored = books
+        .filter((b) => !existing.has(b.id))
+        .map((b) => ({ ...b, shelfIds: b.shelfIds.filter((id) => shelfIds.has(id)) }));
+      const restoredIds = new Set(restored.map((b) => b.id));
+      return {
+        books: [...restored, ...st.books],
+        sessions: [...sessions.filter((x) => restoredIds.has(x.bookId)), ...st.sessions],
+        notes: [...notes.filter((x) => restoredIds.has(x.bookId)), ...st.notes],
+      };
+    });
     persist(get);
   },
 
@@ -410,6 +423,11 @@ export const useStore = create<StoreState>((set, get) => ({
           // This makes only a genuinely new read cycle increase readCount.
           patch.finishedAt = b.finishedAt ?? Date.now();
           if (!b.finishedAt) patch.readCount = (b.readCount ?? 0) + 1;
+        } else if (b.status === 'finished' && b.pageCount && page < b.pageCount) {
+          // Moving a finished book back to an earlier page is a correction
+          // ("I hadn't actually finished"): it can't stay "finished at page
+          // 50 of 300". finishedAt/readCount are kept, like setStatus does.
+          patch.status = 'reading';
         }
         return { ...b, ...patch };
       }),

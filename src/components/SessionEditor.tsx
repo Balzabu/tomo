@@ -6,6 +6,7 @@ import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation, formatDate } from '@/i18n';
 import { Button } from '@/components/ui';
 import { Dialog } from '@/components/Dialog';
+import { MAX_SESSION_MINUTES, pagesError, parsePageField } from '@/lib/utils';
 
 export interface SessionDraft {
   startPage?: number;
@@ -20,6 +21,8 @@ interface Props {
   /** existing session to edit, or null to add a new one */
   session?: ReadingSession | null;
   defaultStartPage?: number;
+  /** book length, used to reject page numbers past the end */
+  pageCount?: number;
   /** prefill the minutes field when adding (ignored when editing a session) */
   defaultMinutes?: number;
   /** default day (any ms timestamp) when adding; falls back to today */
@@ -43,6 +46,7 @@ export function SessionEditor({
   visible,
   session,
   defaultStartPage,
+  pageCount,
   defaultMinutes,
   defaultDayTs,
   title,
@@ -78,21 +82,19 @@ export function SessionEditor({
   }, [visible, session, defaultStartPage, defaultMinutes, defaultDayTs]);
 
   const mins = parseInt(minutes, 10);
-  const canSave = Number.isFinite(mins) && mins > 0;
+  const minutesOk = Number.isFinite(mins) && mins > 0 && mins <= MAX_SESSION_MINUTES;
+  const minutesTooLong = Number.isFinite(mins) && mins > MAX_SESSION_MINUTES;
+  const sp = parsePageField(startPage);
+  const ep = parsePageField(endPage);
+  const pageErr = pagesError(sp, ep, pageCount);
+  const canSave = minutesOk && !pageErr;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const isToday = dayTs >= today.getTime();
 
   const save = () => {
     if (!canSave) return;
-    const sp = parseInt(startPage, 10);
-    const ep = parseInt(endPage, 10);
-    onSave({
-      startPage: Number.isFinite(sp) && sp >= 0 ? sp : undefined,
-      endPage: Number.isFinite(ep) && ep >= 0 ? ep : undefined,
-      minutes: mins,
-      dayTs,
-    });
+    onSave({ startPage: sp, endPage: ep, minutes: mins, dayTs });
     onClose();
   };
 
@@ -123,6 +125,13 @@ export function SessionEditor({
         <Ionicons name="arrow-forward" size={18} color={c.textFaint} />
         <Field label={tr('timer.toPage')} value={endPage} onChange={setEndPage} c={c} />
       </View>
+      {pageErr ? (
+        <Text style={[styles.error, { color: c.danger }]}>
+          {pageErr === 'order'
+            ? tr('session.pageOrder')
+            : tr('session.pageRange', { n: pageCount ?? 0 })}
+        </Text>
+      ) : null}
 
       <View style={{ gap: 6 }}>
         <Text style={[styles.label, { color: c.textMuted }]}>{tr('session.minutes')}</Text>
@@ -134,6 +143,11 @@ export function SessionEditor({
           placeholderTextColor={c.textFaint}
           style={[styles.input, { backgroundColor: c.cardAlt, color: c.text }]}
         />
+        {minutesTooLong ? (
+          <Text style={[styles.error, { color: c.danger }]}>
+            {tr('session.minutesMax', { n: MAX_SESSION_MINUTES })}
+          </Text>
+        ) : null}
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
@@ -181,5 +195,6 @@ const styles = StyleSheet.create({
   dateTxt: { fontSize: 16, fontWeight: '700' },
   pagesRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md },
   label: { fontSize: 13, fontWeight: '600' },
+  error: { fontSize: 12, fontWeight: '600', marginTop: -4 },
   input: { height: 48, borderRadius: radius.md, paddingHorizontal: spacing.md, fontSize: 16, fontWeight: '600' },
 });

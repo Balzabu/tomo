@@ -53,13 +53,16 @@ export default function EditBookScreen() {
     savedRef.current = true;
     const pc = parseInt(pages, 10);
     const sn = parseFloat(seriesNumber);
+    // An empty field clears the page count on purpose; garbled input ("abc")
+    // keeps the existing value instead of silently erasing it.
+    const pageCount = pages.trim() === '' ? undefined : Number.isFinite(pc) && pc > 0 ? pc : book.pageCount;
     updateBook(book.id, {
       title: title.trim(),
       authors: author.trim() ? author.split(',').map((a) => a.trim()).filter(Boolean) : [],
-      pageCount: Number.isFinite(pc) && pc > 0 ? pc : undefined,
+      pageCount,
       coverUrl,
       series: series.trim() || undefined,
-      seriesNumber: Number.isFinite(sn) ? sn : undefined,
+      seriesNumber: Number.isFinite(sn) && sn >= 0 ? sn : undefined,
       pace,
       moods: moods.length ? moods : undefined,
     });

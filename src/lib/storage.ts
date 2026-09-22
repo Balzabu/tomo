@@ -70,6 +70,13 @@ export async function saveData(data: AppData, opts?: { force?: boolean }): Promi
   }
 }
 
+/** Whether the last launch-time read of the library failed (data may still be
+ *  intact on disk). Callers must not run destructive reconciliation on the
+ *  empty in-memory state while this is true. */
+export function didReadFail(): boolean {
+  return readFailed;
+}
+
 export async function clearData(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY);
   readFailed = false;
