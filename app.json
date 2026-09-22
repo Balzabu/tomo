@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tomo",
     "slug": "tomo",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "tomo",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "io.balzabu.tomo",
-      "versionCode": 7,
+      "versionCode": 8,
       "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
