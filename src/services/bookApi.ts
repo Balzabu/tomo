@@ -1,4 +1,5 @@
 import { BookSearchResult } from '@/types';
+import { bestIsbn, compactIsbn, looksLikeIsbn, normalizeIsbn } from '@/lib/isbn';
 
 // Tomo uses only free, key-less public APIs:
 //  - Google Books  (rich metadata, but a tight key-less quota → HTTP 429)
@@ -144,9 +145,10 @@ interface GoogleVolume {
 function mapGoogleVolume(v: GoogleVolume): BookSearchResult | null {
   const info = v.volumeInfo;
   if (!info || !info.title) return null;
-  const isbn =
-    info.industryIdentifiers?.find((i) => i.type === 'ISBN_13')?.identifier ??
-    info.industryIdentifiers?.find((i) => i.type === 'ISBN_10')?.identifier;
+  const isbn = bestIsbn([
+    info.industryIdentifiers?.find((i) => i.type === 'ISBN_13')?.identifier,
+    info.industryIdentifiers?.find((i) => i.type === 'ISBN_10')?.identifier,
+  ]);
   return {
     title: info.subtitle ? `${info.title}: ${info.subtitle}` : info.title,
     authors: info.authors ?? [],
@@ -208,9 +210,9 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
     .filter((x): x is string => !!x);
 
   const ids = (e.dc$identifier ?? []).map((i) => i.$t ?? '');
-  const isbn =
-    ids.find((s) => s.startsWith('ISBN:') && s.length === 18)?.slice(5) ??
-    ids.find((s) => s.startsWith('ISBN:'))?.slice(5);
+  const isbn = bestIsbn(
+    ids.filter((s) => s.startsWith('ISBN:')).map((s) => s.slice(5))
+  );
 
   const formats = (e.dc$format ?? []).map((f) => f.$t ?? '');
   const pageStr = formats.find((f) => /pages?/i.test(f));
@@ -282,7 +284,7 @@ function olCoverFromIsbn(isbn?: string): string | undefined {
 
 function mapOLDoc(d: OLDoc): BookSearchResult | null {
   if (!d.title) return null;
-  const isbn = d.isbn?.find((x) => x.length === 13) ?? d.isbn?.[0];
+  const isbn = bestIsbn(d.isbn ?? []);
   return {
     title: d.title,
     authors: d.author_name ?? [],
@@ -337,14 +339,11 @@ export interface LookupOutcome {
  * Returning null keeps ordinary title/author searches on the free-text path.
  */
 export function isbnFromQuery(query: string): string | null {
-  const compact = query
-    .trim()
-    .replace(/^isbn(?:-1[03])?\s*:?\s*/i, '')
-    .replace(/[\s-]/g, '')
-    .toUpperCase();
-
-  if (/^\d{13}$/.test(compact) || /^\d{9}[\dX]$/.test(compact)) return compact;
-  return null;
+  const compact = compactIsbn(query);
+  // Shape-only gate: a mistyped ISBN still goes down the ISBN path (and gets
+  // a "not found") rather than becoming a free-text search for 13 digits.
+  if (!looksLikeIsbn(compact)) return null;
+  return normalizeIsbn(compact) ?? compact;
 }
 
 /**
@@ -382,7 +381,9 @@ export async function lookupByIsbn(isbnRaw: string): Promise<LookupOutcome> {
     result,
     offline: result == null && lastNetworkFailureAt >= startedAt,
   });
-  const isbn = isbnRaw.replace(/[^0-9Xx]/g, '');
+  // Canonical ISBN-13 when valid (all three catalogs accept it, including the
+  // cover URLs); otherwise the compacted input, so an odd id still gets a try.
+  const isbn = normalizeIsbn(isbnRaw) ?? compactIsbn(isbnRaw);
   if (!isbn) return outcome(null);
 
   // 1) Google Books v1 by ISBN - only worthwhile with a key (key-less = 429)

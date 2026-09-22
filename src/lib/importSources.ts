@@ -1,5 +1,6 @@
 import { ImportedBook, MOOD_OPTIONS, ReadingPace, ReadingStatus } from '@/types';
 import { parseCsv } from '@/lib/csv';
+import { compactIsbn, normalizeIsbn } from '@/lib/isbn';
 
 export type ImportSource = 'goodreads' | 'storygraph';
 
@@ -48,8 +49,11 @@ function ratingOrUndef(v?: string): number | undefined {
 
 function cleanIsbn(v?: string): string | undefined {
   if (!v) return undefined;
-  // Goodreads wraps ISBNs as ="9781234567890"
-  const digits = v.replace(/[^0-9Xx]/g, '');
+  // Goodreads wraps ISBNs as ="9781234567890"; a valid value becomes the
+  // canonical ISBN-13, an invalid-but-plausible one is kept as typed.
+  const n = normalizeIsbn(v);
+  if (n) return n;
+  const digits = compactIsbn(v);
   return digits.length === 10 || digits.length === 13 ? digits : undefined;
 }
 

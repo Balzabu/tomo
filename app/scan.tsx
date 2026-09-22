@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { lookupByIsbn } from '@/services/bookApi';
 import { findExistingBook, useStore } from '@/store/useStore';
+import { isbnKey, normalizeIsbn } from '@/lib/isbn';
 import { BookSearchResult } from '@/types';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -35,18 +36,17 @@ export default function ScanScreen() {
 
   const cameraActive = phase === 'scanning';
 
-  const handleIsbn = async (data: string) => {
+  const handleIsbn = async (isbn: string) => {
     // The scanned code may already be in the library - no network needed to
     // find that out (and it works offline).
-    const isbn = data.replace(/[^0-9Xx]/g, '');
-    const local = useStore.getState().books.find((b) => b.isbn && b.isbn === isbn);
+    const local = useStore.getState().books.find((b) => isbnKey(b.isbn) === isbn);
     if (local) {
       setDup({ existingId: local.id, result: null });
       setPhase('duplicate');
       return;
     }
 
-    const { result, offline } = await lookupByIsbn(data);
+    const { result, offline } = await lookupByIsbn(isbn);
     if (!mountedRef.current) return; // screen was dismissed mid-lookup
     if (result) {
       // The catalog result may match a library book that lacks this exact ISBN
@@ -71,11 +71,16 @@ export default function ScanScreen() {
 
   const onScanned = ({ data }: { data: string }) => {
     if (lockRef.current) return;
+    // Only a valid ISBN (978/979 EAN with a good checksum) stops the camera.
+    // Any other EAN-13 in view - a price sticker, a grocery item - is ignored
+    // and scanning simply continues, instead of burning a 4-request lookup.
+    const isbn = normalizeIsbn(data);
+    if (!isbn) return;
     lockRef.current = true;
     setPhase('searching'); // disables the camera while we look up
-    setLastIsbn(data);
+    setLastIsbn(isbn);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    void handleIsbn(data);
+    void handleIsbn(isbn);
   };
 
   const resumeScanning = () => {
@@ -115,7 +120,7 @@ export default function ScanScreen() {
         style={StyleSheet.absoluteFill}
         facing="back"
         active={cameraActive}
-        barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+        barcodeScannerSettings={{ barcodeTypes: ['ean13'] }}
         onBarcodeScanned={cameraActive ? onScanned : undefined}
       />
 

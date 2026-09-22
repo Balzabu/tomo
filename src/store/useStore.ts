@@ -14,6 +14,7 @@ import {
 } from '@/types';
 import { emptyData, loadData, saveData, PERSIST_FAILED } from '@/lib/storage';
 import { toDateKey, uid } from '@/lib/utils';
+import { isbnKey, normalizeBookIsbns, normalizeIsbn } from '@/lib/isbn';
 import { SHELF_COLORS } from '@/theme/theme';
 import { refreshWidgets } from '@/widgets/refresh';
 import { useSnackbar } from '@/store/useSnackbar';
@@ -145,13 +146,24 @@ AppState.addEventListener('change', (state) => {
   if (state !== 'active') flushPersist();
 });
 
+/** Store the canonical ISBN-13 when the value validates; keep the raw string
+ *  otherwise (never drop user data over a checksum). */
+function canonicalIsbn(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  return normalizeIsbn(raw) ?? raw;
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   ...emptyData,
   hydrated: false,
 
   hydrate: async () => {
     const data = await loadData();
-    set({ ...data, hydrated: true });
+    // One-shot, idempotent: books saved before ISBN normalisation get their
+    // canonical ISBN-13 (same array ref when nothing changes, so no write).
+    const { books, changed } = normalizeBookIsbns(data.books);
+    set({ ...data, books, hydrated: true });
+    if (changed) persist(get);
   },
 
   replaceAll: async (data) => {
@@ -179,7 +191,7 @@ export const useStore = create<StoreState>((set, get) => ({
       title: result.title,
       authors: result.authors,
       coverUrl: result.coverUrl,
-      isbn: result.isbn,
+      isbn: canonicalIsbn(result.isbn),
       pageCount: result.pageCount,
       description: result.description,
       publisher: result.publisher,
@@ -209,7 +221,7 @@ export const useStore = create<StoreState>((set, get) => ({
       title: input.title,
       authors: input.authors ?? [],
       coverUrl: input.coverUrl,
-      isbn: input.isbn,
+      isbn: canonicalIsbn(input.isbn),
       pageCount: input.pageCount,
       description: input.description,
       status,
@@ -251,13 +263,14 @@ export const useStore = create<StoreState>((set, get) => ({
     };
 
     // Match on ISBN *and* title|author: a book that exists with an ISBN must
-    // still be recognised when the CSV row lacks one (or carries the ISBN-10
-    // where the library has the ISBN-13).
+    // still be recognised when the CSV row lacks one. ISBNs compare through
+    // isbnKey, so an ISBN-10 in the CSV matches the library's ISBN-13.
     const keysOf = (b: { isbn?: string; title: string; authors: string[] }) => {
       const keys = [
         `t:${b.title.trim().toLowerCase()}|${(b.authors[0] ?? '').trim().toLowerCase()}`,
       ];
-      if (b.isbn) keys.push(`isbn:${b.isbn}`);
+      const ik = isbnKey(b.isbn);
+      if (ik) keys.push(`isbn:${ik}`);
       return keys;
     };
 
@@ -281,7 +294,7 @@ export const useStore = create<StoreState>((set, get) => ({
         id: uid('b_'),
         title: it.title.trim(),
         authors: it.authors ?? [],
-        isbn: it.isbn,
+        isbn: canonicalIsbn(it.isbn),
         pageCount: it.pageCount,
         status: it.status,
         currentPage:
@@ -311,6 +324,7 @@ export const useStore = create<StoreState>((set, get) => ({
       books: s.books.map((b) => {
         if (b.id !== id) return b;
         const next = { ...b, ...patch };
+        if ('isbn' in patch) next.isbn = canonicalIsbn(patch.isbn);
         // Metadata corrections must never leave impossible progress such as
         // page 400 of a book whose corrected length is 300 pages.
         if (patch.pageCount !== undefined && next.pageCount) {
@@ -626,8 +640,9 @@ export function findExistingBook(
   b: { isbn?: string; title: string; authors?: string[] }
 ): Book | undefined {
   const titleKey = `${b.title.trim().toLowerCase()}|${(b.authors?.[0] ?? '').trim().toLowerCase()}`;
+  const ik = isbnKey(b.isbn);
   return books.find((x) => {
-    if (b.isbn && x.isbn && x.isbn === b.isbn) return true;
+    if (ik && isbnKey(x.isbn) === ik) return true;
     return (
       `${x.title.trim().toLowerCase()}|${(x.authors[0] ?? '').trim().toLowerCase()}` === titleKey
     );

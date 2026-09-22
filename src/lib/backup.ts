@@ -5,6 +5,7 @@ import { AppData, Book, BookNote, Goal, GoalType, NoteType, ReadingSession, Read
 import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
 import { base64ToCover, coverToBase64, isLocalCover } from '@/lib/covers';
+import { normalizeIsbn } from '@/lib/isbn';
 
 // Import sanitisation: never trust a hand-edited backup file.
 
@@ -50,7 +51,7 @@ function sanitizeBook(raw: unknown): Book | null {
     title,
     authors: asStringArray(r.authors),
     coverUrl: asOptionalString(r.coverUrl),
-    isbn: asOptionalString(r.isbn),
+    isbn: normalizeIsbn(asOptionalString(r.isbn)) ?? asOptionalString(r.isbn),
     pageCount,
     description: asOptionalString(r.description),
     publisher: asOptionalString(r.publisher),
