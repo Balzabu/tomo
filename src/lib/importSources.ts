@@ -1,6 +1,8 @@
 import { ImportedBook, MOOD_OPTIONS, ReadingPace, ReadingStatus } from '@/types';
 import { parseCsv } from '@/lib/csv';
 import { compactIsbn, normalizeIsbn } from '@/lib/isbn';
+import { splitDateRanges } from '@/lib/reads';
+import { parseLocalDateKey } from '@/lib/utils';
 
 export type ImportSource = 'goodreads' | 'storygraph';
 
@@ -61,17 +63,35 @@ function cleanIsbn(v?: string): string | undefined {
 
 function parseDate(v?: string): number | undefined {
   if (!v) return undefined;
-  const s = v.trim().replace(/\//g, '-');
+  const s = v.trim();
   // A bare YYYY-MM-DD is parsed by Date.parse as UTC midnight, but every yearly
   // aggregate buckets in local time - so in negative-offset zones the date
   // slips to the previous day/year. Build a LOCAL date (at noon, DST-safe).
-  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) {
-    const t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0).getTime();
-    return Number.isFinite(t) ? t : undefined;
-  }
-  const t = Date.parse(s);
+  const local = parseLocalDateKey(s);
+  if (local != null) return local;
+  const t = Date.parse(s.replace(/\//g, '-'));
   return Number.isFinite(t) ? t : undefined;
+}
+
+/**
+ * StoryGraph "Dates Read": comma-separated `YYYY/MM/DD-YYYY/MM/DD` ranges,
+ * oldest first; a trailing `YYYY/MM/DD-` is a read in progress. Dates are
+ * matched with a regex rather than split on "-", which is also the range
+ * separator.
+ */
+function parseDateRanges(v?: string): { start?: number; end?: number }[] {
+  if (!v) return [];
+  const out: { start?: number; end?: number }[] = [];
+  for (const part of v.split(',')) {
+    const dates = part.match(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g) ?? [];
+    if (dates.length === 0) continue;
+    const open = part.trim().endsWith('-');
+    const start = parseDate(dates[0]);
+    const end = dates.length > 1 ? parseDate(dates[dates.length - 1]) : open ? undefined : start;
+    if (start == null && end == null) continue;
+    out.push({ start, end });
+  }
+  return out;
 }
 
 function splitList(v?: string): string[] {
@@ -152,6 +172,9 @@ function mapGoodreads(r: Record<string, string>): ImportedBook | null {
     publishedDate: (r['Original Publication Year'] || r['Year Published'] || '').trim() || undefined,
     addedAt: parseDate(r['Date Added']),
     finishedAt: status === 'finished' ? parseDate(r['Date Read']) : undefined,
+    // Goodreads exports only the last "Date Read", so earlier reads are
+    // counted (readCount) but not dated.
+    readCount: num(r['Read Count']),
     shelfNames: shelfNames.length ? shelfNames : undefined,
   };
 }
@@ -181,8 +204,8 @@ function mapStoryGraph(r: Record<string, string>): ImportedBook | null {
   const status = storyGraphStatus(r['Read Status'] ?? '');
   const rating = ratingOrUndef(r['Star Rating']);
   const review = (r['Review'] ?? '').trim() || undefined;
-  const finished =
-    parseDate(r['Last Date Read']) ?? parseDate((r['Dates Read'] ?? '').split('-').pop());
+  const history = splitDateRanges(parseDateRanges(r['Dates Read']));
+  const finished = history.finishedAt ?? parseDate(r['Last Date Read']);
 
   return {
     title: parsed.title,
@@ -196,7 +219,14 @@ function mapStoryGraph(r: Record<string, string>): ImportedBook | null {
     moods: normalizeMoods(r['Moods']),
     pace: normalizePace(r['Pace']),
     addedAt: parseDate(r['Date Added']),
+    startedAt: history.startedAt,
     finishedAt: status === 'finished' ? finished : undefined,
+    // Earlier completed ranges are dated history; a finished book whose last
+    // range is also the current cycle keeps only the earlier ones in `reads`.
+    reads: status === 'finished' ? history.reads : history.finishedAt != null
+      ? [...(history.reads ?? []), { startedAt: history.startedAt, finishedAt: history.finishedAt }]
+      : history.reads,
+    readCount: num(r['Read Count']),
     shelfNames: splitList(r['Tags']).length ? splitList(r['Tags']) : undefined,
   };
 }

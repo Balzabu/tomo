@@ -8,6 +8,7 @@ import {
   Goal,
   GoalType,
   ImportedBook,
+  ReadRecord,
   ReadingSession,
   ReadingStatus,
   Shelf,
@@ -15,6 +16,7 @@ import {
 import { emptyData, loadData, saveData, PERSIST_FAILED } from '@/lib/storage';
 import { toDateKey, uid } from '@/lib/utils';
 import { isbnKey, normalizeBookIsbns, normalizeIsbn } from '@/lib/isbn';
+import { withRereadStarted } from '@/lib/reads';
 import { SHELF_COLORS } from '@/theme/theme';
 import { refreshWidgets } from '@/widgets/refresh';
 import { useSnackbar } from '@/store/useSnackbar';
@@ -43,6 +45,12 @@ interface StoreState extends AppData {
   setProgress: (id: string, currentPage: number) => void;
   setRating: (id: string, rating: number) => void;
   startReread: (id: string) => void;
+  /** Edit the reading dates by hand (null clears). Never touches status or
+   *  readCount: this is a correction, not a state change. */
+  setReadDates: (
+    id: string,
+    patch: { startedAt?: number | null; finishedAt?: number | null; reads?: ReadRecord[] }
+  ) => void;
   toggleShelfForBook: (bookId: string, shelfId: string) => void;
 
   // Sessions
@@ -326,6 +334,10 @@ export const useStore = create<StoreState>((set, get) => ({
         addedAt: it.addedAt ?? now,
         startedAt: it.startedAt,
         finishedAt: it.finishedAt,
+        // Same rule as addBook: a finished book has been read once, unless the
+        // export says otherwise (Goodreads/StoryGraph "Read Count").
+        readCount: it.readCount ?? (it.status === 'finished' ? 1 : undefined),
+        reads: it.reads,
         shelfIds: (it.shelfNames ?? []).map(shelfIdFor),
         source: 'import',
       });
@@ -461,16 +473,32 @@ export const useStore = create<StoreState>((set, get) => ({
     get().updateBook(id, { rating });
   },
 
-  // Start a fresh read cycle on a finished book: back to "reading" from page 0,
-  // clearing the old finish date. readCount is preserved and gets bumped again
-  // when this cycle reaches the end (via setProgress/setStatus).
+  // Start a fresh read cycle on a finished book: the current finish is banked
+  // into the read history (so past years' stats keep it), then back to
+  // "reading" from page 0. readCount is preserved and gets bumped again when
+  // this cycle reaches the end (via setProgress/setStatus).
   startReread: (id) => {
+    const now = Date.now();
     set((s) => ({
-      books: s.books.map((b) =>
-        b.id === id
-          ? { ...b, status: 'reading', currentPage: 0, startedAt: Date.now(), finishedAt: undefined }
-          : b
-      ),
+      books: s.books.map((b) => (b.id === id ? withRereadStarted(b, now) : b)),
+    }));
+    persist(get);
+  },
+
+  setReadDates: (id, patch) => {
+    set((s) => ({
+      books: s.books.map((b) => {
+        if (b.id !== id) return b;
+        const next = { ...b };
+        if (patch.startedAt !== undefined) next.startedAt = patch.startedAt ?? undefined;
+        if (patch.finishedAt !== undefined) next.finishedAt = patch.finishedAt ?? undefined;
+        if (patch.reads !== undefined) next.reads = patch.reads.length ? patch.reads : undefined;
+        // A finish can't precede its start.
+        if (next.startedAt != null && next.finishedAt != null && next.finishedAt < next.startedAt) {
+          next.startedAt = next.finishedAt;
+        }
+        return next;
+      }),
     }));
     persist(get);
   },

@@ -6,6 +6,7 @@ import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
 import { base64ToCover, coverToBase64, isLocalCover } from '@/lib/covers';
 import { normalizeIsbn } from '@/lib/isbn';
+import { sanitizeReads } from '@/lib/reads';
 
 // Import sanitisation: never trust a hand-edited backup file.
 
@@ -77,6 +78,7 @@ function sanitizeBook(raw: unknown): Book | null {
       typeof r.readCount === 'number' && Number.isFinite(r.readCount)
         ? Math.max(0, Math.floor(r.readCount))
         : undefined,
+    reads: sanitizeReads(r.reads),
     shelfIds: asStringArray(r.shelfIds),
     source: VALID_SOURCES.includes(r.source as Book['source'])
       ? (r.source as Book['source'])

@@ -36,6 +36,15 @@ export const MOOD_OPTIONS = [
   'tense',
 ] as const;
 
+/** One completed read cycle. The *current* cycle lives in Book.startedAt /
+ *  Book.finishedAt; only earlier, completed cycles are recorded here (see
+ *  src/lib/reads.ts), so old data needs no migration and nothing is counted
+ *  twice. */
+export interface ReadRecord {
+  startedAt?: number;
+  finishedAt: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -62,7 +71,8 @@ export interface Book {
   addedAt: number;
   startedAt?: number;
   finishedAt?: number;
-  readCount?: number; // times finished (rereads)
+  readCount?: number; // times finished (rereads); a floor - see readCountOf()
+  reads?: ReadRecord[]; // earlier completed cycles, oldest first
 
   shelfIds: string[];
   source: BookSource;
@@ -138,6 +148,8 @@ export interface ImportedBook {
   addedAt?: number;
   startedAt?: number;
   finishedAt?: number;
+  readCount?: number;
+  reads?: ReadRecord[];
   shelfNames?: string[];
 }
 

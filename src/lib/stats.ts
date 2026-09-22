@@ -1,5 +1,6 @@
 import { Book, Goal, ReadingSession } from '@/types';
 import { toDateKey, dateKeyToDate } from '@/lib/utils';
+import { booksFinishedInYear, countFinishesInYear } from '@/lib/reads';
 
 export interface OverallStats {
   totalBooks: number;
@@ -23,9 +24,7 @@ export function computeStats(
   const totalPagesRead = sessions.reduce((s, x) => s + (x.pagesRead || 0), 0);
 
   const finishedBooks = books.filter((b) => b.status === 'finished');
-  const finishedThisYear = finishedBooks.filter(
-    (b) => b.finishedAt && new Date(b.finishedAt).getFullYear() === year
-  ).length;
+  const finishedThisYear = countFinishesInYear(books, year);
 
   // The rate only counts sessions where pages were actually logged: a timed
   // session saved without page numbers would put its hours in the denominator
@@ -237,9 +236,7 @@ export function computeInsights(books: Book[], sessions: ReadingSession[]): Insi
     if (!topCategory || count > topCategory.count) topCategory = { name, count };
   }
 
-  const thisYearFinished = books.filter(
-    (b) => b.status === 'finished' && b.finishedAt && new Date(b.finishedAt).getFullYear() === year
-  ).length;
+  const thisYearFinished = countFinishesInYear(books, year);
 
   return { fastestBook, topCategory, pagesThisMonth, pagesLastMonth, thisYearFinished };
 }
@@ -269,9 +266,7 @@ export function isWrappedAvailable(
   year: number
 ): boolean {
   const prefix = `${year}-`;
-  const finishedThisYear = books.filter(
-    (b) => b.status === 'finished' && b.finishedAt && new Date(b.finishedAt).getFullYear() === year
-  ).length;
+  const finishedThisYear = countFinishesInYear(books, year);
   const sessionsThisYear = sessions.filter((s) => s.date.startsWith(prefix)).length;
   return finishedThisYear >= 3 || sessionsThisYear >= 15;
 }
@@ -296,9 +291,10 @@ export function computeYearWrapped(
 ): YearWrapped {
   const prefix = `${year}-`;
   const yearSessions = sessions.filter((s) => s.date.startsWith(prefix));
-  const finished = books.filter(
-    (b) => b.status === 'finished' && b.finishedAt && new Date(b.finishedAt).getFullYear() === year
-  );
+  // Per-book aggregates (author, rating, longest, moods) see each book once;
+  // the headline count credits every finish, so a re-read counts again.
+  const finished = booksFinishedInYear(books, year);
+  const booksFinished = countFinishesInYear(books, year);
 
   const pagesRead = yearSessions.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
   const secondsRead = yearSessions.reduce((sum, s) => sum + s.durationSeconds, 0);
@@ -348,7 +344,7 @@ export function computeYearWrapped(
 
   return {
     year,
-    booksFinished: finished.length,
+    booksFinished,
     pagesRead,
     secondsRead,
     sessions: yearSessions.length,
@@ -374,13 +370,7 @@ export function computeGoalProgress(
 ): GoalProgress {
   const todayKey = toDateKey();
   if (goal.type === 'books_per_year') {
-    const current = books.filter(
-      (b) =>
-        b.status === 'finished' &&
-        b.finishedAt &&
-        new Date(b.finishedAt).getFullYear() === goal.year
-    ).length;
-    return { goal, current };
+    return { goal, current: countFinishesInYear(books, goal.year) };
   }
   if (goal.type === 'pages_per_day') {
     const current = sessions

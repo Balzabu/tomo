@@ -25,6 +25,7 @@ import { SessionEditor, SessionDraft } from '@/components/SessionEditor';
 import { Dialog } from '@/components/Dialog';
 import { ReadingSession } from '@/types';
 import { estimateRemaining } from '@/lib/stats';
+import { readCountOf } from '@/lib/reads';
 import { formatDuration } from '@/lib/utils';
 
 /** Four-digit year from a free-form published date ("2005-07-01", "July 2005",
@@ -319,8 +320,8 @@ export default function BookDetailScreen() {
         <View style={styles.statRow}>
           <MiniStat label={tr('book.totalTime')} value={formatDuration(totalSeconds)} t={t} />
           <MiniStat label={tr('book.sessions')} value={String(sessions.length)} t={t} />
-          {book.readCount && book.readCount > 1 ? (
-            <MiniStat label={tr('book.timesRead')} value={`${book.readCount}×`} t={t} />
+          {readCountOf(book) > 1 ? (
+            <MiniStat label={tr('book.timesRead')} value={`${readCountOf(book)}×`} t={t} />
           ) : book.startedAt ? (
             <MiniStat label={tr('book.startedOn')} value={formatDate(book.startedAt, lang)} t={t} />
           ) : null}

@@ -16,6 +16,23 @@ export function toDateKey(ts: number = Date.now()): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Parse "YYYY-MM-DD" (or with "/") typed by hand into a local timestamp at
+ *  noon (DST-safe), or null when it isn't a real calendar date. Local, not
+ *  Date.parse: a bare date parses as UTC midnight and slips a day in
+ *  negative-offset zones. */
+export function parseLocalDateKey(s: string): number | null {
+  const m = s.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (y < 1000 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const date = new Date(y, mo - 1, d, 12, 0, 0, 0);
+  // Reject overflow such as Feb 30 (which Date silently rolls into March).
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+  return date.getTime();
+}
+
 export function dateKeyToDate(key: string): Date {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d);
