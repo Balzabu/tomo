@@ -19,7 +19,7 @@ import {
   WidgetContext,
 } from './widget-shared';
 import { setReadingSelection } from './widget-prefs';
-import { renderWidgetFor } from './widget-task-handler';
+import { currentSize, renderWidgetFor } from './widget-task-handler';
 
 /**
  * Configuration screen for the "Currently reading" widget. Launched by Android
@@ -54,10 +54,16 @@ export function WidgetConfigScreen({
     try {
       if (bookId) await setReadingSelection(widgetInfo.widgetId, bookId);
       renderWidget(
-        await renderWidgetFor('CurrentlyReading', ctx, widgetInfo.widgetId, {
-          width: widgetInfo.width,
-          height: widgetInfo.height,
-        })
+        await renderWidgetFor(
+          'CurrentlyReading',
+          ctx,
+          widgetInfo.widgetId,
+          // The size captured when the picker opened can be provisional.
+          await currentSize('CurrentlyReading', widgetInfo.widgetId, {
+            width: widgetInfo.width,
+            height: widgetInfo.height,
+          })
+        )
       );
       setResult('ok');
     } catch {

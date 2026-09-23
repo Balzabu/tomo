@@ -13,7 +13,7 @@
 
     android:description="@string/widget_streakgoal_description"
 
-    android:initialLayout="@layout/rn_widget"
+    android:initialLayout="@layout/tomo_widget_loading"
     android:previewImage="@drawable/streakgoal_preview"
 
 

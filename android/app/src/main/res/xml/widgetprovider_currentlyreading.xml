@@ -13,7 +13,7 @@
 
     android:description="@string/widget_currentlyreading_description"
 
-    android:initialLayout="@layout/rn_widget"
+    android:initialLayout="@layout/tomo_widget_loading"
     android:previewImage="@drawable/currentlyreading_preview"
 
     android:configure="io.balzabu.tomo.WidgetConfigurationActivity"

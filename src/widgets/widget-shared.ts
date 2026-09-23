@@ -119,20 +119,85 @@ export function link(path = ''): string {
   return `${SCHEME}:///${path}`;
 }
 
+// Remote covers (Google Books / Open Library URLs) are cached as files for
+// the widgets: the native renderer otherwise downloads every cover again,
+// synchronously, on every render - the main cost of the first frame after a
+// widget is placed. A cover that isn't cached yet is handed over as its URL,
+// exactly as before the cache existed, so a slow or failed download can never
+// cost the widget its cover; the download finishing in the background serves
+// every later render.
+const WIDGET_COVER_DIR = `${FileSystem.cacheDirectory}widget-covers/`;
+/** How long a render waits for a download before falling back to the URL. */
+const COVER_DOWNLOAD_WAIT_MS = 1500;
+const inflight = new Map<string, Promise<string | undefined>>();
+
+function hashUrl(url: string): string {
+  // djb2 - only needs to be stable and spread, not cryptographic.
+  let h = 5381;
+  for (let i = 0; i < url.length; i++) h = ((h << 5) + h + url.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + url.length.toString(36);
+}
+
+function downloadCover(url: string, file: string): Promise<string | undefined> {
+  let job = inflight.get(url);
+  if (!job) {
+    job = (async () => {
+      const tmp = `${file}.part`;
+      try {
+        await FileSystem.makeDirectoryAsync(WIDGET_COVER_DIR, { intermediates: true }).catch(() => {});
+        // Download next to the final name and move it into place, so a
+        // half-written file is never picked up as a cached cover.
+        const res = await FileSystem.downloadAsync(url, tmp);
+        const info = await FileSystem.getInfoAsync(tmp);
+        if (res.status !== 200 || !info.exists || info.size === 0) {
+          await FileSystem.deleteAsync(tmp, { idempotent: true });
+          return undefined;
+        }
+        await FileSystem.moveAsync({ from: tmp, to: file });
+        return file;
+      } catch {
+        await FileSystem.deleteAsync(tmp, { idempotent: true }).catch(() => {});
+        return undefined;
+      } finally {
+        inflight.delete(url);
+      }
+    })();
+    inflight.set(url, job);
+  }
+  return job;
+}
+
+/** The cached file for a remote cover, or the URL itself when it isn't
+ *  cached (yet): the native renderer then fetches it as it always did. */
+async function cachedRemoteCover(url: string): Promise<string> {
+  const file = `${WIDGET_COVER_DIR}${hashUrl(url)}.img`;
+  try {
+    if ((await FileSystem.getInfoAsync(file)).exists) return file;
+  } catch {
+    return url;
+  }
+  const done = await Promise.race([
+    downloadCover(url, file),
+    new Promise<undefined>((r) => setTimeout(() => r(undefined), COVER_DOWNLOAD_WAIT_MS)),
+  ]);
+  return done ?? url;
+}
+
 /** Convert a cover url into something ImageWidget accepts. Local covers are
  *  handed over as file:// URIs - the native renderer decodes those directly
  *  (ResourceUtils.getBitmap), so no multi-MB base64 string has to be read,
- *  encoded and pushed across the bridge on every single widget refresh. */
+ *  encoded and pushed across the bridge on every single widget refresh.
+ *  Remote covers go through a file cache (see cachedRemoteCover). */
 export async function coverToWidgetImage(
   coverUrl?: string
 ): Promise<ImageWidgetSource | undefined> {
   if (!coverUrl) return undefined;
-  if (
-    coverUrl.startsWith('http:') ||
-    coverUrl.startsWith('https:') ||
-    coverUrl.startsWith('data:image') ||
-    coverUrl.startsWith('file:')
-  ) {
+  if (coverUrl.startsWith('http:') || coverUrl.startsWith('https:')) {
+    // No cache dir (never expected on Android): let the renderer fetch it.
+    if (!FileSystem.cacheDirectory) return coverUrl as ImageWidgetSource;
+    return (await cachedRemoteCover(coverUrl)) as ImageWidgetSource;
+  }
+  if (coverUrl.startsWith('data:image') || coverUrl.startsWith('file:')) {
     return coverUrl as ImageWidgetSource;
   }
   // Unknown scheme (defensive): fall back to embedding as a data-uri.

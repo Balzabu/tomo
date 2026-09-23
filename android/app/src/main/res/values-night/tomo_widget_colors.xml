@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card colour of the default dark scheme (Notte) - src/theme/theme.ts. -->
+<resources>
+    <color name="tomo_widget_card">#24283b</color>
+</resources>

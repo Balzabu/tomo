@@ -64,23 +64,25 @@
       "expo-localization",
       "./plugins/withAndroidLintFix",
       [
-        "./plugins/withWidgetMinResize",
+        "./plugins/withWidgetProviderExtras",
         {
-          "CurrentlyReading": {
-            "width": "150dp",
-            "height": "70dp"
-          },
-          "QuickStart": {
-            "width": "150dp",
-            "height": "100dp"
-          },
-          "StreakGoal": {
-            "width": "70dp",
-            "height": "70dp"
-          },
-          "Heatmap": {
-            "width": "150dp",
-            "height": "110dp"
+          "widgets": {
+            "CurrentlyReading": {
+              "minResizeWidth": "150dp",
+              "minResizeHeight": "70dp"
+            },
+            "QuickStart": {
+              "minResizeWidth": "150dp",
+              "minResizeHeight": "100dp"
+            },
+            "StreakGoal": {
+              "minResizeWidth": "70dp",
+              "minResizeHeight": "70dp"
+            },
+            "Heatmap": {
+              "minResizeWidth": "150dp",
+              "minResizeHeight": "110dp"
+            }
           }
         }
       ],

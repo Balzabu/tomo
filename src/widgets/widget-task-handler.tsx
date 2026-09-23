@@ -1,4 +1,5 @@
 import React from 'react';
+import { getWidgetInfo } from 'react-native-android-widget';
 import type { WidgetRepresentation, WidgetTaskHandlerProps } from 'react-native-android-widget';
 import { computeStats, buildHeatmap, computeGoalProgress } from '@/lib/stats';
 import { monthsShort, weekdayInitials } from '@/i18n/strings';
@@ -207,6 +208,44 @@ export function sizeOf(info: { width: number; height: number }): WidgetSize {
   return { width: info.width, height: info.height };
 }
 
+/** The widget's size as the launcher reports it *now*, or `fallback`. An
+ *  event carries the size from when it was queued, which can already be stale
+ *  by the time the (possibly cold-started) JS gets to render it. */
+export async function currentSize(
+  name: string,
+  widgetId: number,
+  fallback: WidgetSize
+): Promise<WidgetSize> {
+  try {
+    const info = (await getWidgetInfo(name)).find((i) => i.widgetId === widgetId);
+    if (info && info.width > 0 && info.height > 0) return sizeOf(info);
+  } catch {
+    // fall through
+  }
+  return fallback;
+}
+
+// While a widget is being dropped, several launchers (OnePlus, Samsung, ...)
+// fire WIDGET_ADDED and one or more WIDGET_RESIZED within a few hundred ms,
+// the first ones with a provisional size. Rendering each of them makes the
+// content visibly jump between layouts. Instead, every render event waits
+// briefly and only the latest one per widget renders, at the size the
+// launcher reports at that point. Headless tasks share one JS runtime, so a
+// module-level map is enough.
+const SETTLE_MS = 250;
+let eventSeq = 0;
+const latestEvent = new Map<number, number>();
+
+/** Resolves to the size to render at, or null when a newer event for the
+ *  same widget arrived meanwhile (that one renders instead). */
+async function settle(name: string, widgetId: number, eventSize: WidgetSize): Promise<WidgetSize | null> {
+  const seq = ++eventSeq;
+  latestEvent.set(widgetId, seq);
+  await new Promise((r) => setTimeout(r, SETTLE_MS));
+  if (latestEvent.get(widgetId) !== seq) return null;
+  return currentSize(name, widgetId, eventSize);
+}
+
 async function handle(props: WidgetTaskHandlerProps, name: WidgetName): Promise<void> {
   const widgetId = props.widgetInfo.widgetId;
   const size = sizeOf(props.widgetInfo);
@@ -215,8 +254,13 @@ async function handle(props: WidgetTaskHandlerProps, name: WidgetName): Promise<
     case 'WIDGET_ADDED':
     case 'WIDGET_UPDATE':
     case 'WIDGET_RESIZED': {
-      const ctx = await loadWidgetContext();
-      props.renderWidget(await renderWidgetFor(name, ctx, widgetId, size));
+      // Load the data while the launcher settles on a size.
+      const [ctx, finalSize] = await Promise.all([
+        loadWidgetContext(),
+        settle(name, widgetId, size),
+      ]);
+      if (!finalSize) break; // superseded by a newer event for this widget
+      props.renderWidget(await renderWidgetFor(name, ctx, widgetId, finalSize));
       break;
     }
     case 'WIDGET_CLICK': {

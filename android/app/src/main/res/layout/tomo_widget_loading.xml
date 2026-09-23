@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown by the launcher from the moment a Tomo widget is placed until its
+     first render arrives (the app's JS has to start first): an empty card in
+     the widget's own shape and colour instead of a blank hole. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/tomo_widget_loading_bg" />
