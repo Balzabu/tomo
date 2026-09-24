@@ -8,7 +8,7 @@ import { useSettings } from '@/store/useSettings';
 import { useActiveSession } from '@/store/useActiveSession';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
-import { APP_NAME } from '@/lib/constants';
+import { APP_NAME, LINKS } from '@/lib/constants';
 import { SettingsGroup, SettingsRow } from '@/components/SettingsRow';
 import { Flag } from '@/components/Flag';
 import { clearData } from '@/lib/storage';
@@ -90,6 +90,7 @@ export default function SettingsScreen() {
 
       <SettingsGroup title={tr('settings.groupData')}>
         <SettingsRow first icon="cloud-upload" label={tr('settings.backupImport')} onPress={() => go('/settings/data')} />
+        <SettingsRow icon="shield-checkmark" label={tr('settings.privacy')} onPress={() => Linking.openURL(LINKS.privacy)} />
         <SettingsRow icon="trash" label={tr('settings.clearData')} danger onPress={onClear} />
       </SettingsGroup>
 

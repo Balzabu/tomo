@@ -141,6 +141,8 @@ Tomo is released under the GNU General Public License v3.0. See the [LICENSE](./
 
 ## Privacy
 
+The full privacy policy is at [balzabu.github.io/tomo/privacy.html](https://balzabu.github.io/tomo/privacy.html) (source: [`docs/privacy.html`](./docs/privacy.html)).
+
 Everything you create (books, sessions, notes, shelves, goals, custom covers) is stored only on your device with AsyncStorage. There is no account, no analytics, no ads, and no third-party tracking, and nothing is uploaded to a server.
 
 The app makes network requests only to fetch public data from Google Books, Open Library and OPAC SBN (the Italian national library catalogue, asked only for page counts): when you search for a book or look up an ISBN, when you update a book from the catalogues or fill in missing details (by hand, or automatically after a CSV import), when you verify an optional Google Books API key, and when it displays a cover that came from one of those catalogs (covers are stored as URLs and loaded on demand, also in the widgets; a cover you pick from your photos is stored on the device). Those requests contain only search terms, ISBNs or cover URLs, with no personal identifiers. The camera is used only to scan ISBN barcodes, which are read on the device and never uploaded.

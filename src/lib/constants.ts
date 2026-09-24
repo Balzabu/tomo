@@ -4,4 +4,5 @@ export const APP_NAME = 'Tomo';
 export const LINKS = {
   github: 'https://github.com/Balzabu',
   website: 'https://balzabu.io',
+  privacy: 'https://balzabu.github.io/tomo/privacy.html',
 };

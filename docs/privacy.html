@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy – Tomo</title>
+  <meta name="description" content="Privacy policy of Tomo, a free, local-first reading tracker for Android.">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1d1f24;
+      --muted: #5b6070;
+      --accent: #536dfe;
+      --rule: #e4e6ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121317;
+        --text: #e8e9ee;
+        --muted: #a0a4b2;
+        --accent: #8c9eff;
+        --rule: #2a2c33;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+    h1 { font-size: 1.9rem; margin: 0 0 4px; }
+    h2 { font-size: 1.2rem; margin: 2em 0 0.5em; padding-top: 1em; border-top: 1px solid var(--rule); }
+    .meta { color: var(--muted); margin: 0 0 1.5em; }
+    a { color: var(--accent); }
+    ul { padding-left: 1.3em; }
+    li { margin: 0.3em 0; }
+    code { font-size: 0.92em; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Tomo · Effective date: 24 September 2026</p>
+
+  <p>Tomo is a free, open-source reading tracker for Android developed by Balzabu (“I”, “me”). This policy explains what happens to your information when you use the app. In short: <strong>Tomo has no account, no analytics, no ads and no server of its own. Everything you create stays on your device.</strong></p>
+
+  <h2>Data stored on your device</h2>
+  <p>Everything you enter in Tomo is stored only in the app's private storage on your device:</p>
+  <ul>
+    <li>your books, shelves, ratings, notes, quotes and reading sessions;</li>
+    <li>reading goals, statistics and app settings (theme, language, reminder time);</li>
+    <li>cover images you choose from your photos (a copy is saved inside the app);</li>
+    <li>the optional Google Books API key, if you enter one.</li>
+  </ul>
+  <p>I never receive this data. It is not uploaded anywhere, and Android's cloud backup is disabled for Tomo.</p>
+
+  <h2>Network requests</h2>
+  <p>Tomo connects to the internet only to fetch public book information. It sends requests to:</p>
+  <ul>
+    <li><a href="https://books.google.com">Google Books</a> (<code>googleapis.com</code>, <code>books.google.com</code>),</li>
+    <li><a href="https://openlibrary.org">Open Library</a> (<code>openlibrary.org</code>, <code>covers.openlibrary.org</code>),</li>
+    <li><a href="https://opac.sbn.it">OPAC SBN</a>, the Italian national library catalogue (only to fill in a missing page count).</li>
+  </ul>
+  <p>These requests happen when you search for a book, look up or scan an ISBN, refresh a book from the catalogues, verify an optional Google Books API key, or display a cover that came from a catalogue. They contain only the search terms, ISBNs or cover addresses involved, plus your API key if you set one. They do not contain your library, notes or any personal identifier.</p>
+  <p>As with any internet connection, these services can see your IP address and basic technical details of the request. They handle that information under their own privacy policies:
+    <a href="https://policies.google.com/privacy">Google</a>,
+    <a href="https://archive.org/about/terms.php">Internet Archive / Open Library</a>,
+    <a href="https://opac.sbn.it">ICCU / OPAC SBN</a>.</p>
+
+  <h2>Permissions</h2>
+  <ul>
+    <li><strong>Camera</strong> – used only to scan book barcodes (ISBN). Barcodes are read on the device. No photos or video are saved or uploaded.</li>
+    <li><strong>Photos</strong> – when you pick a book cover, Android's photo picker gives Tomo only the image you choose.</li>
+    <li><strong>Notifications</strong> – used only for the daily reading reminder and the active reading-session timer. Notifications are scheduled locally on the device. Tomo does not use push notifications.</li>
+    <li><strong>Internet</strong> – used only for the book-information requests described above.</li>
+  </ul>
+
+  <h2>Barcode scanning (Google ML Kit)</h2>
+  <p>The barcode scanner uses Google's ML Kit, which runs on the device. Images from the camera are processed locally and are not sent to Google. Like other Google Play services components, ML Kit may contact Google servers to download model updates and may send Google anonymous performance and usage metrics about the scanning feature. See <a href="https://developers.google.com/ml-kit/terms">ML Kit terms</a> and <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</p>
+
+  <h2>What Tomo does not do</h2>
+  <ul>
+    <li>No user accounts or sign-in.</li>
+    <li>No analytics, crash reporting, advertising or tracking SDKs.</li>
+    <li>No collection of your name, email, location, contacts or device identifiers.</li>
+    <li>No selling or sharing of your data with anyone.</li>
+  </ul>
+
+  <h2>Sharing and backups</h2>
+  <p>When you share a book or quote, or export a backup or CSV file, Tomo creates the file on your device and hands it to the app you choose through Android's share sheet. What happens next depends on that app. Tomo sends nothing on its own.</p>
+
+  <h2>Keeping and deleting your data</h2>
+  <p>Your data stays on your device until you delete it. You can remove everything at any time in <em>Settings → Clear all data</em>, or by uninstalling the app or clearing its storage in Android settings. Because I hold no copy of your data, I cannot recover it for you. Export a backup if you want to keep it.</p>
+
+  <h2>Children</h2>
+  <p>Tomo does not knowingly collect personal information from anyone, including children under 13.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the new version will be published on this page with a new effective date. The full history is available in the <a href="https://github.com/Balzabu/tomo/commits/main/docs/privacy.html">source repository</a>.</p>
+
+  <h2>Contact</h2>
+  <p>For questions about this policy or your privacy, email <a href="mailto:noc@balzabu.io">noc@balzabu.io</a> or open an issue at <a href="https://github.com/Balzabu/tomo/issues">github.com/Balzabu/tomo/issues</a>.</p>
+</main>
+</body>
+</html>
