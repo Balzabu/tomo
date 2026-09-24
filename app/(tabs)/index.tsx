@@ -38,6 +38,8 @@ const SORTS: Sort[] = LIBRARY_SORTS;
 const PACES: ReadingPace[] = ['slow', 'medium', 'fast'];
 /** Sorts whose natural order is "newest / highest first". */
 const DESC_BY_DEFAULT: Sort[] = ['recent', 'rating', 'progress', 'finished', 'started'];
+/** The library's starting order (as in useSettings), which "Reset" returns to. */
+const DEFAULT_SORT: Sort = 'recent';
 
 /** Last finish of a book (current cycle or history), for the "date finished" sort. */
 function lastFinishedAt(b: Book): number {
@@ -90,6 +92,13 @@ export default function LibraryScreen() {
     },
     [setLibraryView, sort, sortAsc]
   );
+  // There is always an order, so a sort can't be "deselected": like the
+  // filters, a changed order is flagged on its button and can be reset.
+  const sortChanged = sort !== DEFAULT_SORT || sortAsc !== !DESC_BY_DEFAULT.includes(DEFAULT_SORT);
+  const resetSort = () => {
+    setLibraryView({ librarySort: DEFAULT_SORT, librarySortAsc: !DESC_BY_DEFAULT.includes(DEFAULT_SORT) });
+    setSortOpen(false);
+  };
   const [sortOpen, setSortOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -326,7 +335,12 @@ export default function LibraryScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={tr('sort.heading')}
               >
-                <Ionicons name="swap-vertical" size={20} color={t.colors.primary} />
+                <View>
+                  <Ionicons name="swap-vertical" size={20} color={t.colors.primary} />
+                  {sortChanged ? (
+                    <View style={[styles.filterDot, { backgroundColor: t.colors.accent }]} />
+                  ) : null}
+                </View>
               </Pressable>
             </View>
 
@@ -500,7 +514,18 @@ export default function LibraryScreen() {
         </ScrollView>
       </BottomSheet>
 
-      <BottomSheet visible={sortOpen} onClose={() => setSortOpen(false)} title={tr('sort.heading')}>
+      <BottomSheet
+        visible={sortOpen}
+        onClose={() => setSortOpen(false)}
+        title={tr('sort.heading')}
+        right={
+          sortChanged ? (
+            <Pressable onPress={resetSort} hitSlop={8} accessibilityRole="button">
+              <Text style={[styles.readBtnTxt, { color: t.colors.primary }]}>{tr('sort.reset')}</Text>
+            </Pressable>
+          ) : null
+        }
+      >
         {SORTS.map((s) => {
           const active = sort === s;
           return (
