@@ -76,6 +76,10 @@ export interface Book {
 
   shelfIds: string[];
   source: BookSource;
+  /** The ISBN the catalogues were last asked about without having anything
+   *  more to fill in - stops the "details missing" prompt from nagging about
+   *  a book they don't know. A different ISBN makes the book eligible again. */
+  catalogCheckedIsbn?: string;
 }
 
 export interface ReadingSession {

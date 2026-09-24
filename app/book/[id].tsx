@@ -27,6 +27,7 @@ import { ReadingSession } from '@/types';
 import { estimateRemaining } from '@/lib/stats';
 import { readCountOf } from '@/lib/reads';
 import { formatDuration } from '@/lib/utils';
+import { needsCatalogData } from '@/lib/bookRefresh';
 
 /** Four-digit year from a free-form published date ("2005-07-01", "July 2005",
  *  "2005"). Open Library editions return prose, so a blind slice(0, 4) would
@@ -275,6 +276,24 @@ export default function BookDetailScreen() {
             <Pill key={m} label={tr(`mood.${m}`)} />
           ))}
         </View>
+      ) : null}
+
+      {/* Missing cover/pages/author but an ISBN to look them up with */}
+      {needsCatalogData(book) ? (
+        <Pressable
+          onPress={() => router.push(`/book/edit/${book.id}?refresh=1`)}
+          accessibilityRole="button"
+          accessibilityLabel={tr('refresh.button')}
+        >
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <Ionicons name="cloud-download-outline" size={22} color={t.colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.body, { color: t.colors.text, fontWeight: '700' }]}>{tr('refresh.incomplete')}</Text>
+              <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('refresh.incompleteSub')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={t.colors.textFaint} />
+          </Card>
+        </Pressable>
       ) : null}
 
       {/* Primary action */}

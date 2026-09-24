@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,7 +17,8 @@ import { useTranslation } from '@/i18n';
 import { Button, Pill } from '@/components/ui';
 import { CoverPicker } from '@/components/CoverPicker';
 import { BookExtraFields } from '@/components/BookExtraFields';
-import { useStore } from '@/store/useStore';
+import { IsbnField } from '@/components/IsbnField';
+import { findExistingBook, useStore } from '@/store/useStore';
 
 export default function AddManualScreen() {
   const t = useTheme();
@@ -26,6 +28,7 @@ export default function AddManualScreen() {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [pages, setPages] = useState('');
+  const [isbn, setIsbn] = useState('');
   const [status, setStatus] = useState<ReadingStatus>('want_to_read');
   const [coverUrl, setCoverUrl] = useState<string | undefined>(undefined);
   const [series, setSeries] = useState('');
@@ -40,11 +43,31 @@ export default function AddManualScreen() {
   const save = () => {
     if (savedRef.current || !title.trim()) return;
     savedRef.current = true;
+    const authors = author.trim() ? author.split(',').map((a) => a.trim()).filter(Boolean) : [];
+    // Same ISBN (any edition format) or same title+author as a library book:
+    // ask before creating a second copy.
+    const existing = findExistingBook(useStore.getState().books, {
+      isbn: isbn.trim() || undefined,
+      title: title.trim(),
+      authors,
+    });
+    if (existing) {
+      Alert.alert(tr('manual.duplicateTitle'), tr('manual.duplicateMsg', { title: existing.title }), [
+        { text: tr('common.cancel'), style: 'cancel', onPress: () => (savedRef.current = false) },
+        { text: tr('search.addAnyway'), onPress: () => commit(authors) },
+      ], { cancelable: true, onDismiss: () => (savedRef.current = false) });
+      return;
+    }
+    commit(authors);
+  };
+
+  const commit = (authors: string[]) => {
     const pc = parseInt(pages, 10);
     const sn = parseFloat(seriesNumber);
     addManualBook({
       title: title.trim(),
-      authors: author.trim() ? author.split(',').map((a) => a.trim()).filter(Boolean) : [],
+      authors,
+      isbn: isbn.trim() || undefined,
       pageCount: Number.isFinite(pc) && pc > 0 ? pc : undefined,
       status,
       coverUrl,
@@ -92,6 +115,7 @@ export default function AddManualScreen() {
         {field(tr('manual.bookTitle'), title, setTitle, { placeholder: tr('manual.titlePlaceholder') })}
         {field(tr('manual.authors'), author, setAuthor, { placeholder: tr('manual.authorsPlaceholder') })}
         {field(tr('manual.pages'), pages, setPages, { keyboard: 'numeric', placeholder: tr('manual.pagesPlaceholder') })}
+        <IsbnField value={isbn} onChange={setIsbn} />
 
         <View style={{ gap: 8 }}>
           <Text style={[styles.label, { color: t.colors.textMuted }]}>{tr('manual.status')}</Text>

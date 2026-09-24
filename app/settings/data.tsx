@@ -1,18 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { AppData, Book } from '@/types';
+import { AppData } from '@/types';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { APP_NAME } from '@/lib/constants';
-import { Button, Card, SectionTitle } from '@/components/ui';
+import { Button, Card, ProgressBar, SectionTitle } from '@/components/ui';
 import { exportCsv, exportData, importData, INVALID_BACKUP } from '@/lib/backup';
 import { PERSIST_FAILED } from '@/lib/storage';
 import { deleteCoverFile } from '@/lib/covers';
 import { parseBookCsv } from '@/lib/importSources';
-import { lookupByIsbn } from '@/services/bookApi';
+import { booksNeedingData, fillMissingData, FillProgress } from '@/services/catalogRefresh';
 
 // CSV exports are plain text; anything this big is not a Goodreads/StoryGraph file.
 const MAX_CSV_BYTES = 16 * 1024 * 1024;
@@ -24,17 +24,41 @@ export default function DataSettings() {
   // used to open a second document picker), only the active one spins.
   const [busy, setBusy] = useState<'export' | 'import' | 'csv' | 'exportCsv' | null>(null);
 
-  // Background page-count enrichment (after a CSV import) must stop if the user
-  // leaves this screen, so it doesn't keep hitting the network and writing.
-  const enrichCancelled = useRef(false);
+  // Catalogue lookups (after a CSV import, or the "fill in" button) stop when
+  // the user leaves this screen, so they don't keep hitting the network.
+  const mounted = useRef(true);
   const enrichAbort = useRef(new AbortController());
+  const fillAbort = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
-      enrichCancelled.current = true;
+      mounted.current = false;
       enrichAbort.current.abort();
+      fillAbort.current?.abort();
     },
     []
   );
+
+  const books = useStore((s) => s.books);
+  const fillCandidates = useMemo(() => booksNeedingData(books).length, [books]);
+  const [fillProgress, setFillProgress] = useState<FillProgress | null>(null);
+
+  const onFill = async () => {
+    const ids = booksNeedingData(useStore.getState().books).map((b) => b.id);
+    if (ids.length === 0 || fillAbort.current) return;
+    const controller = new AbortController();
+    fillAbort.current = controller;
+    setFillProgress({ done: 0, total: ids.length, updated: 0 });
+    const res = await fillMissingData(ids, {
+      signal: controller.signal,
+      onProgress: (p) => mounted.current && setFillProgress(p),
+    });
+    fillAbort.current = null;
+    if (!mounted.current) return;
+    setFillProgress(null);
+    const counts = { updated: res.updated, total: res.total };
+    if (res.stopped === 'offline') Alert.alert(tr('fill.offlineTitle'), tr('fill.offlineMsg', counts));
+    else Alert.alert(tr('common.done'), tr('fill.doneMsg', counts));
+  };
 
   const onExport = async () => {
     const s = useStore.getState();
@@ -117,33 +141,6 @@ export default function DataSettings() {
     ]);
   };
 
-  const enrichMissingPages = async (ids: string[]) => {
-    const targets = useStore
-      .getState()
-      .books.filter((b) => ids.includes(b.id) && b.isbn && !b.pageCount)
-      .slice(0, 60); // cap network work
-    const patches: { id: string; patch: Partial<Book> }[] = [];
-    for (const b of targets) {
-      if (enrichCancelled.current) break;
-      try {
-        const { result: found } = await lookupByIsbn(b.isbn!, { signal: enrichAbort.current.signal });
-        // The store's patch application marks a finished book fully read once
-        // its length is known, so only the page count needs sending.
-        if (found?.pageCount) patches.push({ id: b.id, patch: { pageCount: found.pageCount } });
-      } catch {
-        // best-effort; skip on failure
-      }
-      // Pace the chain: 60 sequential lookups can mean 200+ requests, which
-      // Open Library throttles.
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    if (enrichCancelled.current || patches.length === 0) return;
-    // One batched write instead of one full-DB write per enriched book; the
-    // lookups took a while, so only fill books whose page count is *still*
-    // missing (the user may have typed it in the meantime) and that still exist.
-    useStore.getState().updateBooks(patches, (current) => !current.pageCount);
-  };
-
   const onImportCsv = async () => {
     try {
       setBusy('csv');
@@ -181,9 +178,10 @@ export default function DataSettings() {
           source: parsed.source === 'goodreads' ? 'Goodreads' : 'StoryGraph',
         })
       );
-      // Fill in missing page counts (StoryGraph exports don't include them) by
-      // looking up each book's ISBN online - best-effort, in the background.
-      void enrichMissingPages(addedIds);
+      // Exports carry no covers (and StoryGraph no page counts): fill the
+      // empty fields from each book's ISBN - best-effort, in the background,
+      // capped; the "fill in" card below handles the rest on demand.
+      void fillMissingData(addedIds, { signal: enrichAbort.current.signal, limit: 60 });
     } catch (e) {
       Alert.alert(tr('settings.importFailTitle'), String(e));
     } finally {
@@ -204,6 +202,26 @@ export default function DataSettings() {
         <SectionTitle>{tr('settings.importCsv')}</SectionTitle>
         <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.csvDesc')}</Text>
         <Button label={tr('settings.importCsv')} icon="library" variant="secondary" full loading={busy === 'csv'} disabled={busy != null} onPress={onImportCsv} />
+      </Card>
+
+      <Card style={{ gap: spacing.md }}>
+        <SectionTitle>{tr('fill.title')}</SectionTitle>
+        <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('fill.desc')}</Text>
+        {fillProgress ? (
+          <>
+            <Text style={[styles.muted, { color: t.colors.text }]}>{tr('fill.progress', { ...fillProgress })}</Text>
+            <ProgressBar progress={fillProgress.total ? fillProgress.done / fillProgress.total : 0} />
+            <Text style={[styles.muted, { color: t.colors.textFaint }]}>{tr('fill.keepOpen')}</Text>
+            <Button label={tr('common.cancel')} icon="close" variant="secondary" full onPress={() => fillAbort.current?.abort()} />
+          </>
+        ) : (
+          <>
+            <Text style={[styles.muted, { color: t.colors.text }]}>
+              {fillCandidates > 0 ? tr('fill.count', { n: fillCandidates }) : tr('fill.none')}
+            </Text>
+            <Button label={tr('fill.start')} icon="cloud-download-outline" variant="secondary" full disabled={fillCandidates === 0} onPress={onFill} />
+          </>
+        )}
       </Card>
 
       <Card style={{ gap: spacing.md }}>

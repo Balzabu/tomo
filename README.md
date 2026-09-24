@@ -2,7 +2,7 @@
 
 A free, local-first reading tracker for Android, and an open alternative to Bookmory. Keep a library, track reading sessions and progress, set goals, and look at your stats, with everything stored on your device.
 
-It is built with Expo (React Native and TypeScript). Book data comes from Google Books and Open Library, both free and without an API key.
+It is built with Expo (React Native and TypeScript). Book data comes from Google Books and Open Library, with OPAC SBN (the Italian national library catalogue) filling in missing page counts, all free and without an API key.
 
 ![Tomo](screenshots/banner.png)
 
@@ -15,7 +15,8 @@ It is built with Expo (React Native and TypeScript). Book data comes from Google
 ## Features
 
 - Library organised by status (to read, reading, read, paused, did not finish), with custom colored shelves.
-- Add books by searching online (Google Books or Open Library), scanning an ISBN barcode, or entering them by hand with your own cover.
+- Add books by searching online (Google Books or Open Library), scanning an ISBN barcode, or entering them by hand with your own cover and an optional ISBN.
+- Update a book from the catalogues by its ISBN, with a field-by-field preview: fields the book is missing are pre-selected, anything that would replace what you entered is opt-in. Books with an ISBN but no cover, page count or author are flagged, and one tap fills the empty fields for the whole library (also done automatically after a CSV import).
 - A reading timer that records how long you read and which pages.
 - Per-book progress and a remaining-time estimate, plus reading time, pages, a day streak, a weekly chart, a GitHub-style heatmap, and monthly insights such as fastest book and most-read genre.
 - Goals for books per year, minutes per day, and pages per day, updated automatically from your sessions.
@@ -53,7 +54,7 @@ For both reasons, Tomo is distributed straight from GitHub [Releases](https://gi
 - Expo SDK 54, React Native 0.81, React 19, TypeScript.
 - expo-router 6 for file-based navigation.
 - Zustand for state, persisted to AsyncStorage. There is no backend.
-- Google Books and Open Library REST APIs for book metadata, with no key required (an optional Google key is supported).
+- Google Books and Open Library REST APIs for book metadata, with no key required (an optional Google key is supported), and the OPAC SBN API for page counts the other two lack.
 - expo-camera for ISBN barcode scanning.
 - Custom chart and heatmap components built on react-native-svg, without a chart library.
 - expo-image and expo-image-picker for covers.
@@ -82,7 +83,7 @@ Type-check with:
 npx tsc --noEmit
 ```
 
-The pure modules (ISBN handling, CSV parsing, read history, chunked storage) have assertion scripts that run under plain Node 22+, without a device or a bundler:
+The pure modules (ISBN handling, page-count parsing, catalogue refresh diffing, CSV parsing, read history, chunked storage) have assertion scripts that run under plain Node 22+, without a device or a bundler:
 
 ```bash
 npm run check
@@ -119,7 +120,7 @@ app/                     # screens (expo-router, file-based routing)
 src/
   types/                 # data model
   store/                 # Zustand stores, AsyncStorage persistence
-  services/              # Google Books, Open Library
+  services/              # Google Books, Open Library, OPAC SBN; catalogue refresh
   lib/                   # storage, stats, backup, CSV, notifications, utils
   components/            # reusable UI (covers, charts, heatmap)
   theme/                 # color schemes and spacing
@@ -142,4 +143,4 @@ Tomo is released under the GNU General Public License v3.0. See the [LICENSE](./
 
 Everything you create (books, sessions, notes, shelves, goals, custom covers) is stored only on your device with AsyncStorage. There is no account, no analytics, no ads, and no third-party tracking, and nothing is uploaded to a server.
 
-The app makes network requests only to fetch public data from Google Books and Open Library: when you search for a book or look up an ISBN (including the page-count lookup after a CSV import), when you verify an optional Google Books API key, and when it displays a cover that came from one of those catalogs (covers are stored as URLs and loaded on demand, also in the widgets; a cover you pick from your photos is stored on the device). Those requests contain only search terms, ISBNs or cover URLs, with no personal identifiers. The camera is used only to scan ISBN barcodes, which are read on the device and never uploaded.
+The app makes network requests only to fetch public data from Google Books, Open Library and OPAC SBN (the Italian national library catalogue, asked only for page counts): when you search for a book or look up an ISBN, when you update a book from the catalogues or fill in missing details (by hand, or automatically after a CSV import), when you verify an optional Google Books API key, and when it displays a cover that came from one of those catalogs (covers are stored as URLs and loaded on demand, also in the widgets; a cover you pick from your photos is stored on the device). Those requests contain only search terms, ISBNs or cover URLs, with no personal identifiers. The camera is used only to scan ISBN barcodes, which are read on the device and never uploaded.

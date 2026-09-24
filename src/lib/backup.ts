@@ -81,6 +81,7 @@ function sanitizeBook(raw: unknown): Book | null {
         : undefined,
     reads: sanitizeReads(r.reads),
     shelfIds: asStringArray(r.shelfIds),
+    catalogCheckedIsbn: asOptionalString(r.catalogCheckedIsbn),
     source: VALID_SOURCES.includes(r.source as Book['source'])
       ? (r.source as Book['source'])
       : 'manual',

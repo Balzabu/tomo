@@ -18,7 +18,11 @@ import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
 import { CoverPicker } from '@/components/CoverPicker';
 import { BookExtraFields } from '@/components/BookExtraFields';
+import { IsbnField } from '@/components/IsbnField';
+import { CatalogRefreshSheet } from '@/components/CatalogRefreshSheet';
 import { deleteCoverFile } from '@/lib/covers';
+import { compactIsbn, looksLikeIsbn, normalizeIsbn } from '@/lib/isbn';
+import { checkedIsbnAfterLookup, pickValues, RefreshValues } from '@/lib/bookRefresh';
 import { parseLocalDateKey, toDateKey } from '@/lib/utils';
 import { ReadingPace, ReadRecord } from '@/types';
 
@@ -65,7 +69,9 @@ function draftError(d: DateDraft): 'editBook.dateInvalid' | 'editBook.dateOrder'
 export default function EditBookScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // refresh=1: opened from the book page's "details missing" banner - start
+  // straight on the catalogue lookup.
+  const { id, refresh } = useLocalSearchParams<{ id: string; refresh?: string }>();
   const book = useBook(id);
   const updateBook = useStore((s) => s.updateBook);
 
@@ -73,6 +79,14 @@ export default function EditBookScreen() {
   const [author, setAuthor] = useState((book?.authors ?? []).join(', '));
   const [pages, setPages] = useState(book?.pageCount ? String(book.pageCount) : '');
   const [coverUrl, setCoverUrl] = useState<string | undefined>(book?.coverUrl);
+  const [isbn, setIsbn] = useState(book?.isbn ?? '');
+  const isbnLookup = normalizeIsbn(isbn) ?? compactIsbn(isbn);
+  const canRefresh = looksLikeIsbn(isbnLookup);
+  const [refreshOpen, setRefreshOpen] = useState(refresh === '1' && canRefresh);
+  // Catalogue values for fields this form has no input for (publisher,
+  // description...); written together with the rest on Save.
+  const [catalogExtra, setCatalogExtra] = useState<RefreshValues>({});
+  const [catalogApplied, setCatalogApplied] = useState(false);
   const [series, setSeries] = useState(book?.series ?? '');
   const [seriesNumber, setSeriesNumber] = useState(
     book?.seriesNumber != null ? String(book.seriesNumber) : ''
@@ -111,6 +125,8 @@ export default function EditBookScreen() {
     // keeps the existing value instead of silently erasing it.
     const pageCount = pages.trim() === '' ? undefined : Number.isFinite(pc) && pc > 0 ? pc : book.pageCount;
     updateBook(book.id, {
+      ...catalogExtra,
+      isbn: isbn.trim() || undefined,
       title: title.trim(),
       authors: author.trim() ? author.split(',').map((a) => a.trim()).filter(Boolean) : [],
       pageCount,
@@ -145,6 +161,38 @@ export default function EditBookScreen() {
     if (coverUrl !== book.coverUrl) void deleteCoverFile(book.coverUrl);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
+  };
+
+  const authorList = (text: string) =>
+    text.trim() ? text.split(',').map((a) => a.trim()).filter(Boolean) : [];
+
+  // What the catalogue diff is made against: the form as it is now, plus the
+  // stored fields the form doesn't show.
+  const draftValues: RefreshValues = {
+    ...pickValues(book),
+    ...catalogExtra,
+    title: title.trim(),
+    authors: authorList(author),
+    pageCount: parseInt(pages, 10) > 0 ? parseInt(pages, 10) : undefined,
+    coverUrl,
+  };
+
+  // The lookup was for the saved ISBN and can't complete the saved book:
+  // record it so the book page stops offering it (the form is untouched).
+  const onCatalogResult = (values: RefreshValues | null) => {
+    if (isbnLookup !== (normalizeIsbn(book.isbn) ?? compactIsbn(book.isbn ?? ''))) return;
+    const checked = checkedIsbnAfterLookup(book, values);
+    if (checked) updateBook(book.id, { catalogCheckedIsbn: checked });
+  };
+
+  const applyCatalog = (patch: RefreshValues) => {
+    const { title: pt, authors: pa, pageCount: pp, coverUrl: pc, ...extra } = patch;
+    if (pt !== undefined) setTitle(pt);
+    if (pa !== undefined) setAuthor(pa.join(', '));
+    if (pp !== undefined) setPages(String(pp));
+    if (pc !== undefined) setCoverUrl(pc);
+    setCatalogExtra((prev) => ({ ...prev, ...extra }));
+    if (Object.keys(patch).length > 0) setCatalogApplied(true);
   };
 
   const field = (
@@ -183,6 +231,23 @@ export default function EditBookScreen() {
         {field(tr('manual.bookTitle'), title, setTitle, { placeholder: tr('manual.titlePlaceholder') })}
         {field(tr('manual.authors'), author, setAuthor, { placeholder: tr('manual.authorsPlaceholder') })}
         {field(tr('manual.pages'), pages, setPages, { keyboard: 'numeric', placeholder: tr('manual.pagesPlaceholder') })}
+
+        <View style={{ gap: spacing.sm }}>
+          <IsbnField value={isbn} onChange={setIsbn} />
+          <Button
+            label={tr('refresh.button')}
+            icon="cloud-download-outline"
+            variant="secondary"
+            full
+            disabled={!canRefresh}
+            onPress={() => setRefreshOpen(true)}
+          />
+          {!canRefresh ? (
+            <Text style={[styles.hint, { color: t.colors.textFaint }]}>{tr('refresh.needIsbn')}</Text>
+          ) : catalogApplied ? (
+            <Text style={[styles.hint, { color: t.colors.primary }]}>{tr('refresh.applied')}</Text>
+          ) : null}
+        </View>
 
         <BookExtraFields
           series={series}
@@ -269,6 +334,15 @@ export default function EditBookScreen() {
           disabled={!title.trim() || !datesValid}
         />
       </ScrollView>
+      <CatalogRefreshSheet
+        visible={refreshOpen}
+        isbn={isbnLookup}
+        current={draftValues}
+        title={title}
+        onApply={applyCatalog}
+        onResult={onCatalogResult}
+        onClose={() => setRefreshOpen(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

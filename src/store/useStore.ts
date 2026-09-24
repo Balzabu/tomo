@@ -257,6 +257,8 @@ export const useStore = create<StoreState>((set, get) => ({
       readCount: isFinished ? 1 : undefined,
       shelfIds: [],
       source: result.source,
+      // Straight from the catalogues: nothing more to ask them about this ISBN.
+      catalogCheckedIsbn: keepIsbn(result.isbn),
     };
     set((s) => ({ books: [book, ...s.books] }));
     persist(get);
