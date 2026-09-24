@@ -1,10 +1,13 @@
 import { BookSearchResult } from '@/types';
 import { bestIsbn, compactIsbn, looksLikeIsbn, normalizeIsbn } from '@/lib/isbn';
+import { pagesFromPhysicalDescription, validPageCount } from '@/lib/pages';
 
 // Tomo uses only free, key-less public APIs:
 //  - Google Books  (rich metadata, but a tight key-less quota → HTTP 429)
 //  - Open Library  (very generous, no key) - used as fallback for search
 //                   and for ISBN lookups / covers.
+//  - OPAC SBN      (Italian national library catalogue, no key) - only to
+//                   fill in a missing page count on ISBN lookups.
 //
 // Strategy: try Google first (best data); on rate-limit/failure fall back to
 // Open Library so search keeps working even when Google says 429.
@@ -16,6 +19,7 @@ const GOOGLE = 'https://www.googleapis.com/books/v1/volumes';
 const GDATA = 'https://books.google.com/books/feeds/volumes';
 const OPENLIB = 'https://openlibrary.org';
 const OPENLIB_COVERS = 'https://covers.openlibrary.org';
+const SBN = 'https://opac.sbn.it/opacmobilegw';
 
 const HEADERS = {
   Accept: 'application/json',
@@ -183,7 +187,7 @@ function mapGoogleVolume(v: GoogleVolume): BookSearchResult | null {
     authors: info.authors ?? [],
     coverUrl: httpsCover(info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail),
     isbn,
-    pageCount: info.pageCount,
+    pageCount: validPageCount(info.pageCount),
     description: info.description,
     publisher: info.publisher,
     publishedDate: info.publishedDate,
@@ -245,7 +249,8 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
 
   const formats = (e.dc$format ?? []).map((f) => f.$t ?? '');
   const pageStr = formats.find((f) => /pages?/i.test(f));
-  const pageCount = pageStr ? parseInt(pageStr, 10) || undefined : undefined;
+  // Italian editions often carry a literal "0 pages" - treated as unknown.
+  const pageCount = pageStr ? validPageCount(parseInt(pageStr, 10)) : undefined;
 
   const thumb = e.link?.find((l) => l.rel?.includes('thumbnail'))?.href;
 
@@ -316,7 +321,7 @@ function mapOLDoc(d: OLDoc): BookSearchResult | null {
     authors: d.author_name ?? [],
     coverUrl: olCoverFromId(d.cover_i) ?? olCoverFromIsbn(isbn),
     isbn,
-    pageCount: d.number_of_pages_median,
+    pageCount: validPageCount(d.number_of_pages_median),
     publishedDate: d.first_publish_year ? String(d.first_publish_year) : undefined,
     publisher: d.publisher?.[0],
     language: d.language?.[0],
@@ -427,7 +432,7 @@ export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSigna
     if (gFirst) {
       gFirst.isbn = gFirst.isbn ?? isbn;
       gFirst.coverUrl = gFirst.coverUrl ?? olCoverFromIsbn(isbn);
-      return outcome(gFirst);
+      return outcome(await withPageCount(gFirst, isbn, signal));
     }
   }
 
@@ -435,47 +440,148 @@ export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSigna
 
   // 2) Google legacy GData feed - key-less, finds Italian editions OL misses
   const gdata = await gdataIsbn(isbn, signal);
-  if (gdata) return outcome(gdata);
+  if (gdata) return outcome(await withPageCount(gdata, isbn, signal));
   if (signal?.aborted) return outcome(null);
 
   // 3) Open Library search by ISBN (fast, gives covers + pages)
-  const olSearch = await getJson<{ docs?: OLDoc[] }>(
-    `${OPENLIB}/search.json?isbn=${encodeURIComponent(isbn)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language`,
-    signal
-  );
-  const olDoc = olSearch.data?.docs?.[0] ? mapOLDoc(olSearch.data.docs[0]) : null;
+  const olDoc = await olSearchIsbn(isbn, signal);
   if (olDoc) {
     olDoc.isbn = olDoc.isbn ?? isbn;
     olDoc.coverUrl = olDoc.coverUrl ?? olCoverFromIsbn(isbn);
-    return outcome(olDoc);
+    return outcome(await withPageCount(olDoc, isbn, signal, ['olSearch']));
   }
 
   if (signal?.aborted) return outcome(null);
 
   // 4) Open Library /isbn/{isbn}.json edition endpoint (last resort)
-  const edition = await getJson<{
-    title?: string;
-    number_of_pages?: number;
-    publish_date?: string;
-    publishers?: string[];
-    authors?: { key: string }[];
-  }>(`${OPENLIB}/isbn/${isbn}.json`, signal);
-  const ed = edition.data;
+  const ed = await olEdition(isbn, signal);
   if (ed?.title) {
     const authors = await resolveOpenLibraryAuthors(ed.authors, signal);
-    return outcome({
+    const result: BookSearchResult = {
       title: ed.title,
       authors,
       coverUrl: olCoverFromIsbn(isbn),
       isbn,
-      pageCount: ed.number_of_pages,
+      pageCount: validPageCount(ed.number_of_pages),
       publishedDate: ed.publish_date,
       publisher: ed.publishers?.[0],
       source: 'openlibrary',
-    });
+    };
+    return outcome(await withPageCount(result, isbn, signal, ['olSearch', 'olEdition']));
   }
 
   return outcome(null);
+}
+
+async function olSearchIsbn(isbn: string, signal?: AbortSignal): Promise<BookSearchResult | null> {
+  const { data } = await getJson<{ docs?: OLDoc[] }>(
+    `${OPENLIB}/search.json?isbn=${encodeURIComponent(isbn)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language`,
+    signal
+  );
+  return data?.docs?.[0] ? mapOLDoc(data.docs[0]) : null;
+}
+
+interface OLEdition {
+  title?: string;
+  number_of_pages?: number;
+  publish_date?: string;
+  publishers?: string[];
+  authors?: { key: string }[];
+}
+
+async function olEdition(isbn: string, signal?: AbortSignal): Promise<OLEdition | null> {
+  const { data } = await getJson<OLEdition>(`${OPENLIB}/isbn/${encodeURIComponent(isbn)}.json`, signal);
+  return data;
+}
+
+/** Page count from OPAC SBN's physical description ("445 p. ; 20 cm"). */
+async function sbnPageCount(isbn: string, signal?: AbortSignal): Promise<number | undefined> {
+  const search = await getJson<{ briefRecords?: { codiceIdentificativo?: string }[] }>(
+    `${SBN}/search.json?isbn=${encodeURIComponent(isbn)}`,
+    signal
+  );
+  const bid = search.data?.briefRecords?.[0]?.codiceIdentificativo;
+  if (!bid || signal?.aborted) return undefined;
+  const full = await getJson<{ descrizioneFisica?: string }>(
+    `${SBN}/full.json?bid=${encodeURIComponent(bid)}`,
+    signal
+  );
+  return pagesFromPhysicalDescription(full.data?.descrizioneFisica);
+}
+
+type PageSource = 'olSearch' | 'olEdition' | 'sbn';
+
+// Edition-specific sources win; Open Library search only knows the median
+// length across all editions of the work.
+const PAGE_PRIORITY: PageSource[] = ['olEdition', 'sbn', 'olSearch'];
+
+/**
+ * Page count for an ISBN from the catalogues a lookup may not have reached:
+ * the lookup stops at the first catalogue that knows the book, and Google in
+ * particular lists many editions with "0 pages". `skip` names sources the
+ * caller already asked. SBN (Italian libraries) describes nearly every
+ * Italian edition, and plenty of foreign ones held in Italian libraries.
+ */
+export async function findPageCount(
+  isbnRaw: string,
+  opts?: { signal?: AbortSignal; skip?: PageSource[] }
+): Promise<number | undefined> {
+  const isbn = normalizeIsbn(isbnRaw) ?? compactIsbn(isbnRaw);
+  if (!isbn) return undefined;
+  const signal = opts?.signal;
+  const skip = new Set(opts?.skip);
+  const sources: [PageSource, () => Promise<number | undefined>][] = [
+    ['olSearch', async () => (await olSearchIsbn(isbn, signal))?.pageCount],
+    ['olEdition', async () => validPageCount((await olEdition(isbn, signal))?.number_of_pages)],
+    ['sbn', () => sbnPageCount(isbn, signal)],
+  ];
+  const pending = sources.filter(([name]) => !skip.has(name));
+  if (signal?.aborted || pending.length === 0) return undefined;
+
+  // Asked in parallel: in sequence, cold connections to three hosts can
+  // outlast the caller's budget. An edition-specific answer settles it at
+  // once; the median-based one is only used if nothing better turns up.
+  const found: Partial<Record<PageSource, number>> = {};
+  const best = () => PAGE_PRIORITY.map((name) => found[name]).find((n) => n);
+  return new Promise((resolve) => {
+    let left = pending.length;
+    for (const [name, get] of pending) {
+      void get()
+        .catch(() => undefined)
+        .then((n) => {
+          if (n) found[name] = n;
+          left--;
+          if ((n && name !== 'olSearch') || left === 0) resolve(best());
+        });
+    }
+  });
+}
+
+// The page count is a nice-to-have: a slow or hanging fallback catalogue must
+// not hold up a book we already found for the full 10 s per-request timeout.
+const PAGE_FILL_BUDGET_MS = 5000;
+
+async function withPageCount(
+  result: BookSearchResult,
+  isbn: string,
+  signal?: AbortSignal,
+  skip?: PageSource[]
+): Promise<BookSearchResult> {
+  if (result.pageCount) return result;
+  const budget = new AbortController();
+  const timer = setTimeout(() => budget.abort(), PAGE_FILL_BUDGET_MS);
+  const onAbort = () => budget.abort();
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort);
+  try {
+    const pageCount = await findPageCount(isbn, { signal: budget.signal, skip });
+    return pageCount ? { ...result, pageCount } : result;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+    // Settled early on a good answer: drop the slower catalogues' requests.
+    budget.abort();
+  }
 }
 
 async function resolveOpenLibraryAuthors(

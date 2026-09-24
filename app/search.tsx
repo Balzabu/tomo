@@ -12,7 +12,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { isbnFromQuery, lookupByIsbn, searchBooks } from '@/services/bookApi';
+import { findPageCount, isbnFromQuery, lookupByIsbn, searchBooks } from '@/services/bookApi';
 import { BookSearchResult, ReadingStatus, STATUS_ORDER } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -176,7 +176,18 @@ function StatusPicker({
 }) {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const addBook = useStore((s) => s.addBook);
+  const addBookToStore = useStore((s) => s.addBook);
+  // Title searches skip the per-ISBN page-count fallbacks (too slow for a
+  // whole result list), so a book added without its length gets it filled in
+  // the background - unless the user has typed one in by then.
+  const addBook = (result: BookSearchResult, status: ReadingStatus) => {
+    const book = addBookToStore(result, status);
+    if (book.pageCount || !book.isbn) return;
+    void findPageCount(book.isbn).then((pageCount) => {
+      if (!pageCount) return;
+      useStore.getState().updateBooks([{ id: book.id, patch: { pageCount } }], (cur) => !cur.pageCount);
+    });
+  };
   // One-shot guard: two quick taps on a status row would add the book twice
   // (and pop two screens). Re-armed whenever a new result is picked.
   const chosenRef = useRef(false);
