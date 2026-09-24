@@ -17,7 +17,8 @@ import { BookSearchResult, ReadingStatus, STATUS_ORDER } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { BookCover } from '@/components/BookCover';
-import { EmptyState } from '@/components/ui';
+import { Button, EmptyState } from '@/components/ui';
+import { SlowHint } from '@/components/SlowHint';
 import { findExistingBook, useStore } from '@/store/useStore';
 import { useSnackbar } from '@/store/useSnackbar';
 
@@ -30,6 +31,8 @@ export default function SearchScreen() {
   const [searched, setSearched] = useState(false);
   const [offline, setOffline] = useState(false);
   const [picker, setPicker] = useState<BookSearchResult | null>(null);
+  // Bumped by "Try again" after a failed (offline) search: re-runs the same query.
+  const [attempt, setAttempt] = useState(0);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqId = useRef(0);
   const mountedRef = useRef(true);
@@ -80,7 +83,7 @@ export default function SearchScreen() {
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [query]);
+  }, [query, attempt]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -103,6 +106,7 @@ export default function SearchScreen() {
           />
           {loading ? <ActivityIndicator color={t.colors.primary} /> : null}
         </View>
+        <SlowHint active={loading} style={[styles.slow, { color: t.colors.textMuted }]} />
       </View>
 
       <FlatList
@@ -146,7 +150,10 @@ export default function SearchScreen() {
         ListEmptyComponent={
           loading ? null : searched && offline ? (
             // Airplane mode / no network is not "this book doesn't exist".
-            <EmptyState icon="cloud-offline-outline" title={tr('search.offline')} subtitle={tr('search.offlineSub')} />
+            <View style={{ gap: spacing.md }}>
+              <EmptyState icon="cloud-offline-outline" title={tr('search.offline')} subtitle={tr('search.offlineSub')} />
+              <Button label={tr('error.retry')} icon="refresh" onPress={() => setAttempt((n) => n + 1)} style={{ alignSelf: 'center' }} />
+            </View>
           ) : searched ? (
             <EmptyState icon="sad-outline" title={tr('search.noResults')} subtitle={tr('search.noResultsSub')} />
           ) : (
@@ -263,6 +270,7 @@ function StatusPicker({
 }
 
 const styles = StyleSheet.create({
+  slow: { fontSize: 13, textAlign: 'center', marginTop: spacing.sm },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

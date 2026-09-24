@@ -281,12 +281,7 @@ async function gdataIsbn(isbn: string, signal?: AbortSignal): Promise<BookSearch
   const url = `${GDATA}?q=isbn:${encodeURIComponent(isbn)}&alt=json`;
   const { data } = await getJson<GFeed>(url, signal);
   const entry = data?.feed?.entry?.[0];
-  const mapped = entry ? mapGEntry(entry) : null;
-  if (mapped) {
-    mapped.isbn = mapped.isbn ?? isbn;
-    mapped.coverUrl = mapped.coverUrl ?? olCoverFromIsbn(isbn);
-  }
-  return mapped;
+  return entry ? mapGEntry(entry) : null;
 }
 
 interface OLDoc {
@@ -389,39 +384,152 @@ export async function searchBooks(query: string, opts?: { signal?: AbortSignal }
   if (!q) return { results: [], offline: false };
   const signal = opts?.signal;
   const startedAt = Date.now();
-  const outcome = (results: BookSearchResult[]): SearchOutcome => ({
+  const google = async (s: AbortSignal) => {
+    if (googleApiKey) {
+      const v1 = await googleSearch(q, s);
+      if (v1 && v1.length > 0) return v1;
+    }
+    if (s.aborted) return null;
+    const gdata = await gdataSearch(q, s);
+    return gdata.length > 0 ? gdata : null;
+  };
+  const openLibrary = async (s: AbortSignal) => {
+    const ol = await openLibrarySearch(q, s);
+    return ol.length > 0 ? ol : null;
+  };
+  const { value, timedOut } = await hedged(google, openLibrary, signal);
+  const results = signal?.aborted ? [] : dedupe(value ?? []);
+  return {
     results,
-    offline: results.length === 0 && lastNetworkFailureAt >= startedAt,
-  });
-
-  if (googleApiKey) {
-    const v1 = await googleSearch(q, signal);
-    if (v1 && v1.length > 0) return outcome(dedupe(v1));
-  }
-  if (signal?.aborted) return outcome([]);
-
-  const gdata = await gdataSearch(q, signal);
-  if (gdata.length > 0) return outcome(dedupe(gdata));
-  if (signal?.aborted) return outcome([]);
-
-  const ol = await openLibrarySearch(q, signal);
-  return outcome(dedupe(ol));
+    offline: results.length === 0 && !signal?.aborted && (timedOut || lastNetworkFailureAt >= startedAt),
+  };
 }
 
-/** Lookup a single book by ISBN (used by the barcode scanner). */
+// A catalogue normally answers within about a second. When Google hasn't
+// after this long, Open Library is asked alongside it instead of after its
+// 10 s timeout: on a network that hangs rather than fails, the waits then
+// overlap instead of adding up.
+const HEDGE_MS = 3000;
+// Hard cap on a search or on finding a book by ISBN; the page-count fill
+// has its own budget.
+const LOOKUP_BUDGET_MS = 12_000;
+// Google is preferred for its richer data: once Open Library has answered,
+// a still-pending Google gets this much longer before that answer is used.
+const PREFERRED_GRACE_MS = 1500;
+
+interface Found {
+  result: BookSearchResult;
+  /** page-count sources the lookup already asked */
+  skip?: PageSource[];
+}
+
+/** Lookup a single book by ISBN (barcode scanner, ISBN searches). */
 export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSignal }): Promise<LookupOutcome> {
   const signal = opts?.signal;
   const startedAt = Date.now();
+  let timedOut = false;
   const outcome = (result: BookSearchResult | null): LookupOutcome => ({
     result,
-    offline: result == null && lastNetworkFailureAt >= startedAt,
+    offline:
+      result == null && !signal?.aborted && (timedOut || lastNetworkFailureAt >= startedAt),
   });
   // Canonical ISBN-13 when valid (all three catalogs accept it, including the
   // cover URLs); otherwise the compacted input, so an odd id still gets a try.
   const isbn = normalizeIsbn(isbnRaw) ?? compactIsbn(isbnRaw);
   if (!isbn) return outcome(null);
 
-  // 1) Google Books v1 by ISBN - only worthwhile with a key (key-less = 429)
+  const hedge = await hedged(
+    (s) => googleIsbnChain(isbn, s),
+    (s) => openLibraryIsbnChain(isbn, s),
+    signal
+  );
+  timedOut = hedge.timedOut;
+  const found = hedge.value;
+  if (!found || signal?.aborted) return outcome(null);
+
+  // The ISBN looked up is the edition in hand; a catalogue may file the book
+  // under another edition's ISBN, which would then defeat duplicate checks
+  // and later catalogue updates.
+  const result = { ...found.result, isbn };
+  result.coverUrl = result.coverUrl ?? olCoverFromIsbn(isbn);
+  return outcome(await withPageCount(result, isbn, signal, found.skip));
+}
+
+/**
+ * Ask Google first and Open Library only if it has nothing - or alongside
+ * it once Google is slow - all within LOOKUP_BUDGET_MS. Every request shares
+ * one signal: the caller's cancel, the budget, and dropping the slower
+ * source once there's an answer. Sources resolve null for "nothing found".
+ */
+async function hedged<T>(
+  google: (signal: AbortSignal) => Promise<T | null>,
+  openLibrary: (signal: AbortSignal) => Promise<T | null>,
+  callerSignal?: AbortSignal
+): Promise<{ value: T | null; timedOut: boolean }> {
+  const lookup = new AbortController();
+  const signal = lookup.signal;
+  const onAbort = () => lookup.abort();
+  if (callerSignal?.aborted) onAbort();
+  else callerSignal?.addEventListener('abort', onAbort);
+  let timedOut = false;
+  const budget = setTimeout(() => {
+    timedOut = true;
+    lookup.abort();
+  }, LOOKUP_BUDGET_MS);
+  let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const first = google(signal).catch(() => null);
+    const slow = Symbol('slow');
+    const early = await Promise.race([
+      first,
+      new Promise<typeof slow>((resolve) => {
+        hedgeTimer = setTimeout(() => resolve(slow), HEDGE_MS);
+      }),
+    ]);
+    let value: T | null;
+    if (early !== slow) {
+      // Google answered in time: Open Library only if it had nothing.
+      value = early || signal.aborted ? early : await openLibrary(signal).catch(() => null);
+    } else {
+      value = await preferFirst(first, openLibrary(signal).catch(() => null), PREFERRED_GRACE_MS);
+    }
+    return { value, timedOut };
+  } finally {
+    clearTimeout(hedgeTimer);
+    clearTimeout(budget);
+    callerSignal?.removeEventListener('abort', onAbort);
+    lookup.abort();
+  }
+}
+
+/** `preferred`'s answer when it has one; `fallback`'s once `preferred` came
+ *  back empty, or `grace` ms after `fallback` answered while it was pending. */
+function preferFirst<T>(preferred: Promise<T | null>, fallback: Promise<T | null>, grace: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    let preferredDone = false;
+    let fallbackDone = false;
+    let fallbackResult: T | null = null;
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (r: T | null) => {
+      clearTimeout(graceTimer);
+      resolve(r);
+    };
+    void preferred.then((r) => {
+      preferredDone = true;
+      if (r) finish(r);
+      else if (fallbackDone) finish(fallbackResult);
+    });
+    void fallback.then((r) => {
+      fallbackDone = true;
+      fallbackResult = r;
+      if (preferredDone) finish(r);
+      else if (r) graceTimer = setTimeout(() => finish(r), grace);
+    });
+  });
+}
+
+async function googleIsbnChain(isbn: string, signal: AbortSignal): Promise<Found | null> {
+  // Google Books v1 - only worthwhile with a key (key-less = 429)
   if (googleApiKey && googleAvailable()) {
     const g = await getJson<{ items?: GoogleVolume[] }>(
       `${GOOGLE}?q=isbn:${encodeURIComponent(isbn)}&country=US${keyParam()}`,
@@ -429,35 +537,27 @@ export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSigna
     );
     if (g.status === 429) googleBlockedUntil = Date.now() + GOOGLE_COOLDOWN_MS;
     const gFirst = g.data?.items?.[0] ? mapGoogleVolume(g.data.items[0]) : null;
-    if (gFirst) {
-      gFirst.isbn = gFirst.isbn ?? isbn;
-      gFirst.coverUrl = gFirst.coverUrl ?? olCoverFromIsbn(isbn);
-      return outcome(await withPageCount(gFirst, isbn, signal));
-    }
+    if (gFirst) return { result: gFirst };
   }
-
-  if (signal?.aborted) return outcome(null);
-
-  // 2) Google legacy GData feed - key-less, finds Italian editions OL misses
+  if (signal.aborted) return null;
+  // Legacy GData feed - key-less, finds Italian editions Open Library misses
   const gdata = await gdataIsbn(isbn, signal);
-  if (gdata) return outcome(await withPageCount(gdata, isbn, signal));
-  if (signal?.aborted) return outcome(null);
+  return gdata ? { result: gdata } : null;
+}
 
-  // 3) Open Library search by ISBN (fast, gives covers + pages)
-  const olDoc = await olSearchIsbn(isbn, signal);
-  if (olDoc) {
-    olDoc.isbn = olDoc.isbn ?? isbn;
-    olDoc.coverUrl = olDoc.coverUrl ?? olCoverFromIsbn(isbn);
-    return outcome(await withPageCount(olDoc, isbn, signal, ['olSearch']));
-  }
-
-  if (signal?.aborted) return outcome(null);
-
-  // 4) Open Library /isbn/{isbn}.json edition endpoint (last resort)
+async function openLibraryIsbnChain(isbn: string, signal: AbortSignal): Promise<Found | null> {
+  // Search by ISBN (fast, gives covers + pages)
+  const search = await olSearchIsbn(isbn, signal);
+  if (search.doc) return { result: search.doc, skip: ['olSearch'] };
+  // Same host: if the search couldn't reach Open Library, the edition
+  // endpoint won't either - don't wait out a second timeout.
+  if (search.unreachable || signal.aborted) return null;
+  // /isbn/{isbn}.json edition endpoint (last resort)
   const ed = await olEdition(isbn, signal);
-  if (ed?.title) {
-    const authors = await resolveOpenLibraryAuthors(ed.authors, signal);
-    const result: BookSearchResult = {
+  if (!ed?.title) return null;
+  const authors = await resolveOpenLibraryAuthors(ed.authors, signal);
+  return {
+    result: {
       title: ed.title,
       authors,
       coverUrl: olCoverFromIsbn(isbn),
@@ -466,19 +566,20 @@ export async function lookupByIsbn(isbnRaw: string, opts?: { signal?: AbortSigna
       publishedDate: ed.publish_date,
       publisher: ed.publishers?.[0],
       source: 'openlibrary',
-    };
-    return outcome(await withPageCount(result, isbn, signal, ['olSearch', 'olEdition']));
-  }
-
-  return outcome(null);
+    },
+    skip: ['olSearch', 'olEdition'],
+  };
 }
 
-async function olSearchIsbn(isbn: string, signal?: AbortSignal): Promise<BookSearchResult | null> {
-  const { data } = await getJson<{ docs?: OLDoc[] }>(
+async function olSearchIsbn(
+  isbn: string,
+  signal?: AbortSignal
+): Promise<{ doc: BookSearchResult | null; unreachable: boolean }> {
+  const { status, data } = await getJson<{ docs?: OLDoc[] }>(
     `${OPENLIB}/search.json?isbn=${encodeURIComponent(isbn)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year,number_of_pages_median,publisher,language`,
     signal
   );
-  return data?.docs?.[0] ? mapOLDoc(data.docs[0]) : null;
+  return { doc: data?.docs?.[0] ? mapOLDoc(data.docs[0]) : null, unreachable: status === 0 };
 }
 
 interface OLEdition {
@@ -531,7 +632,7 @@ export async function findPageCount(
   const signal = opts?.signal;
   const skip = new Set(opts?.skip);
   const sources: [PageSource, () => Promise<number | undefined>][] = [
-    ['olSearch', async () => (await olSearchIsbn(isbn, signal))?.pageCount],
+    ['olSearch', async () => (await olSearchIsbn(isbn, signal)).doc?.pageCount],
     ['olEdition', async () => validPageCount((await olEdition(isbn, signal))?.number_of_pages)],
     ['sbn', () => sbnPageCount(isbn, signal)],
   ];

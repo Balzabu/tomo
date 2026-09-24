@@ -11,6 +11,7 @@ import { BookSearchResult } from '@/types';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
+import { SlowHint } from '@/components/SlowHint';
 
 type Phase = 'scanning' | 'searching' | 'notfound' | 'offline' | 'duplicate';
 
@@ -139,6 +140,7 @@ export default function ScanScreen() {
           <Text style={styles.scrimTitle}>{tr('scan.searching')}</Text>
           {lastIsbn ? <Text style={styles.scrimSub}>ISBN {lastIsbn}</Text> : null}
           <Text style={styles.scrimHint}>{tr('scan.paused')}</Text>
+          <SlowHint active style={styles.scrimHint} />
         </View>
       ) : null}
 
