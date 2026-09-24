@@ -1,4 +1,5 @@
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/components/AppAlert';
 import { router, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -105,7 +106,6 @@ export default function SettingsScreen() {
             <Text style={[styles.linkTxt, { color: c.textMuted }]}>balzabu.io</Text>
           </Pressable>
         </View>
-        <Text style={[styles.madeBy, { color: c.textFaint }]}>{tr('settings.madeBy')}</Text>
       </View>
     </ScrollView>
   );
@@ -118,5 +118,4 @@ const styles = StyleSheet.create({
   links: { flexDirection: 'row', gap: spacing.xl, marginTop: 4 },
   link: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   linkTxt: { fontSize: 13, fontWeight: '600' },
-  madeBy: { fontSize: 12, marginTop: 6, textAlign: 'center' },
 });

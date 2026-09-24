@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert } from '@/components/AppAlert';
 import { router, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import {

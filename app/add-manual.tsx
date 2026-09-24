@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { TextInput } from '@/components/ThemedTextInput';
+import { Alert } from '@/components/AppAlert';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ReadingPace, ReadingStatus, STATUS_ORDER } from '@/types';

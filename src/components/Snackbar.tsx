@@ -32,8 +32,11 @@ export function Snackbar() {
           {message}
         </Text>
         {actionLabel ? (
-          <Pressable onPress={act} hitSlop={8}>
-            <Text style={[styles.action, { color: t.colors.primary }]}>{actionLabel}</Text>
+          <Pressable onPress={act} hitSlop={8} accessibilityRole="button">
+            {/* The bar is inverted (text colour as background); the theme's
+                primary is too close to that in almost every theme, so the
+                action uses the message colour and stands out by weight. */}
+            <Text style={[styles.action, { color: t.colors.bg }]}>{actionLabel}</Text>
           </Pressable>
         ) : null}
       </View>

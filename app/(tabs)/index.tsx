@@ -5,9 +5,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { TextInput } from '@/components/ThemedTextInput';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -325,7 +325,7 @@ export default function LibraryScreen() {
                     color={t.colors.primary}
                   />
                   {activeFilters > 0 ? (
-                    <View style={[styles.filterDot, { backgroundColor: t.colors.accent }]} />
+                    <View style={[styles.filterDot, { backgroundColor: t.colors.primary, borderColor: t.colors.card }]} />
                   ) : null}
                 </View>
               </Pressable>
@@ -338,7 +338,7 @@ export default function LibraryScreen() {
                 <View>
                   <Ionicons name="swap-vertical" size={20} color={t.colors.primary} />
                   {sortChanged ? (
-                    <View style={[styles.filterDot, { backgroundColor: t.colors.accent }]} />
+                    <View style={[styles.filterDot, { backgroundColor: t.colors.primary, borderColor: t.colors.card }]} />
                   ) : null}
                 </View>
               </Pressable>
@@ -679,7 +679,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  filterDot: { position: 'absolute', top: -3, right: -4, width: 8, height: 8, borderRadius: 4 },
+  // Same colour as the icon it marks (the theme's primary), ringed in the
+  // search box's background so it stays distinct from the icon in every theme.
+  filterDot: { position: 'absolute', top: -4, right: -5, width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
   filterGroupLabel: { fontSize: 13, fontWeight: '700', marginTop: spacing.sm },
   filterChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   selectBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },

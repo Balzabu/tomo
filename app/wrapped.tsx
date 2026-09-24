@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { Alert } from '@/components/AppAlert';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { durationUnits, formatInt, useTranslation } from '@/i18n';

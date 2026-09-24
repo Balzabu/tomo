@@ -1,4 +1,5 @@
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { TextInput } from '@/components/ThemedTextInput';
 import { MOOD_OPTIONS, ReadingPace } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';

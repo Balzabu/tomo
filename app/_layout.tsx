@@ -25,6 +25,7 @@ import { reconcileCovers } from '@/lib/covers';
 import { refreshWidgets } from '@/widgets/refresh';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Snackbar } from '@/components/Snackbar';
+import { AlertHost } from '@/components/AppAlert';
 import { ActiveSessionWatcher } from '@/components/ActiveSessionWatcher';
 
 // Anchor deep links (e.g. the widgets' tomo:///timer/<id>) to the tab group so
@@ -164,6 +165,7 @@ export default function RootLayout() {
             </Stack>
           )}
           <Snackbar />
+          <AlertHost />
           {hydrated && settingsHydrated && sessionHydrated ? <ActiveSessionWatcher /> : null}
           </ErrorBoundary>
         </ThemeProvider>

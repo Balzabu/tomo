@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   AppState,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { TextInput } from '@/components/ThemedTextInput';
+import { Alert } from '@/components/AppAlert';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';

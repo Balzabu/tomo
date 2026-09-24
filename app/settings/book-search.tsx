@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { TextInput } from '@/components/ThemedTextInput';
+import { Alert } from '@/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';

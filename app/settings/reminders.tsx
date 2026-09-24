@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert } from '@/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '@/store/useSettings';
 import { radius, spacing, useTheme } from '@/theme/theme';

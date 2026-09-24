@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Alert } from '@/components/AppAlert';
 import { Book } from '@/types';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
