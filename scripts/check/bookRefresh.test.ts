@@ -69,6 +69,10 @@ assert.equal(checkedIsbnAfterLookup({ ...incomplete, coverUrl: 'c' }, { coverUrl
 assert.equal(checkedIsbnAfterLookup({ isbn: I, authors: ['a'], coverUrl: 'c', pageCount: 3 }, null), undefined); // complete already
 assert.equal(checkedIsbnAfterLookup({ authors: [] }, null), undefined); // no ISBN
 
+// the catalogue language is not refreshed: the app never shows or uses it
+assert.deepEqual(diffBook({}, { language: 'es' } as object), []);
+assert.deepEqual(fillEmptyPatch({ title: 'T' }, { title: 'T', ...({ language: 'it' } as object) }), {});
+
 // pickValues drops non-refresh fields
 assert.deepEqual(pickValues({ title: 'T', ...({ status: 'reading', isbn: '1' } as object) }), { title: 'T' });
 console.log('bookRefresh: all assertions passed');

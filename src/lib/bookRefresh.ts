@@ -4,7 +4,8 @@
 // Catalogues are not always better than what the user typed (placeholder
 // titles, "Title / Author ; translator" strings, other editions), so nothing
 // here overwrites blindly: a field the book lacks is a 'fill', a field that
-// differs is a 'change', and only fills are pre-selected.
+// differs is a 'change', and only fills are pre-selected. Only fields the app
+// shows or uses are refreshed (the catalogue language, for one, is not).
 import type { BookSearchResult } from '@/types';
 import { compactIsbn, looksLikeIsbn, normalizeIsbn } from './isbn.ts';
 
@@ -16,7 +17,6 @@ export const REFRESH_FIELDS = [
   'publisher',
   'publishedDate',
   'description',
-  'language',
   'categories',
 ] as const;
 
@@ -30,7 +30,6 @@ export interface RefreshValues {
   publisher?: string;
   publishedDate?: string;
   description?: string;
-  language?: string;
   categories?: string[];
 }
 

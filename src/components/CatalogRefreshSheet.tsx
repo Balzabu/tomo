@@ -38,7 +38,7 @@ interface Props {
  */
 export function CatalogRefreshSheet({ visible, isbn, current, title, onApply, onResult, onClose }: Props) {
   const t = useTheme();
-  const { t: tr, lang } = useTranslation();
+  const { t: tr } = useTranslation();
   const [phase, setPhase] = useState<Phase>('loading');
   const [diffs, setDiffs] = useState<FieldDiff[]>([]);
   const [selected, setSelected] = useState<Set<RefreshField>>(new Set());
@@ -83,9 +83,8 @@ export function CatalogRefreshSheet({ visible, isbn, current, title, onApply, on
     onClose();
   };
 
-  const show = (field: RefreshField, v: FieldDiff['current']) => {
+  const show = (v: FieldDiff['current']) => {
     if (v == null || (Array.isArray(v) && v.length === 0)) return tr('refresh.empty');
-    if (field === 'language' && typeof v === 'string') return languageName(v, lang);
     return Array.isArray(v) ? v.join(', ') : String(v);
   };
 
@@ -136,11 +135,11 @@ export function CatalogRefreshSheet({ visible, isbn, current, title, onApply, on
                   ) : (
                     <>
                       <Text numberOfLines={d.field === 'description' ? 4 : 3} style={[styles.value, { color: t.colors.text }]}>
-                        {show(d.field, d.incoming)}
+                        {show(d.incoming)}
                       </Text>
                       {d.kind === 'change' ? (
                         <Text numberOfLines={2} style={[styles.old, { color: t.colors.textFaint }]}>
-                          {show(d.field, d.current)}
+                          {show(d.current)}
                         </Text>
                       ) : null}
                     </>
@@ -160,17 +159,6 @@ export function CatalogRefreshSheet({ visible, isbn, current, title, onApply, on
       {body}
     </BottomSheet>
   );
-}
-
-// Catalogues give ISO codes ("it", "pt-BR"); show "italiano" where the JS
-// engine has Intl.DisplayNames, the code itself otherwise.
-function languageName(code: string, uiLang: string): string {
-  try {
-    const name = new Intl.DisplayNames([uiLang], { type: 'language' }).of(code);
-    return name && name !== code ? `${name} (${code})` : code;
-  } catch {
-    return code;
-  }
 }
 
 const styles = StyleSheet.create({
