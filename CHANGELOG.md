@@ -2,7 +2,7 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
-## 1.4.0 (unreleased)
+## 1.4.0 (2026-09-30)
 
 ### What's new
 
