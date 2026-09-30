@@ -31,6 +31,7 @@ RAW = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "raw")
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "screenshots")
 W, H = 1080, 1920
 N = 8  # frames (Google Play's maximum)
+SS = 4  # supersampling for anti-aliased curves and rotated edges
 
 FONT_URLS = {  # Google Fonts static TTFs (Inter v20)
     "Inter-Medium.ttf": "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf",
@@ -106,9 +107,10 @@ def rounded(im, radius):
     """Round the corners, keeping any transparency the image already has
     (replacing it would turn transparent pixels into opaque black)."""
     im = im.convert("RGBA")
-    m = Image.new("L", im.size, 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, im.width - 1, im.height - 1], radius=radius, fill=255)
-    im.putalpha(ImageChops.multiply(im.getchannel("A"), m))
+    # Drawn at SS x and scaled down: ImageDraw doesn't anti-alias curves.
+    m = Image.new("L", (im.width * SS, im.height * SS), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, im.width * SS - 1, im.height * SS - 1], radius=radius * SS, fill=255)
+    im.putalpha(ImageChops.multiply(im.getchannel("A"), m.resize(im.size, Image.LANCZOS)))
     return im
 
 
@@ -144,11 +146,16 @@ def phone(shot, width):
     sw = width - bezel * 2
     sh = round(shot.height * sw / shot.width)
     screen = clean_status_bar(shot).resize((sw, sh), Image.LANCZOS)
-    body = Image.new("RGBA", (width, sh + bezel * 2), (0, 0, 0, 0))
-    d = ImageDraw.Draw(body)
-    d.rounded_rectangle([0, 0, width - 1, sh + bezel * 2 - 1], radius=76, fill=(12, 13, 20, 255), outline=(62, 68, 98, 255), width=3)
+    # The frame and camera hole are drawn at SS x for smooth curves.
+    bh = sh + bezel * 2
+    big = Image.new("RGBA", (width * SS, bh * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    d.rounded_rectangle([0, 0, width * SS - 1, bh * SS - 1], radius=76 * SS, fill=(12, 13, 20, 255), outline=(62, 68, 98, 255), width=3 * SS)
+    body = big.convert("RGBa").resize((width, bh), Image.LANCZOS).convert("RGBA")
     body.alpha_composite(rounded(screen, 62), (bezel, bezel))
-    d.ellipse([width // 2 - 11, bezel + 22, width // 2 + 11, bezel + 44], fill=(5, 5, 8, 255))
+    hole = Image.new("RGBA", (22 * SS, 22 * SS), (0, 0, 0, 0))
+    ImageDraw.Draw(hole).ellipse([0, 0, 22 * SS - 1, 22 * SS - 1], fill=(5, 5, 8, 255))
+    body.alpha_composite(hole.resize((22, 22), Image.LANCZOS), (width // 2 - 11, bezel + 22))
     return body
 
 
@@ -186,7 +193,14 @@ def card(name, box, tol=16):
                 al[x, y] = 0
             elif (x and mk[x - 1, y] == magic) or (x < w - 1 and mk[x + 1, y] == magic) or \
                     (y and mk[x, y - 1] == magic) or (y < h - 1 and mk[x, y + 1] == magic):
-                al[x, y] = max(0, min(255, round(255 * _dist(px[x, y], bg) / span * 1.4)))
+                a = max(0, min(255, round(255 * _dist(px[x, y], bg) / span * 1.4)))
+                al[x, y] = a
+                if 0 < a < 255:
+                    # An anti-aliased edge pixel is card blended with the old
+                    # background: take the background out, or the edge keeps
+                    # a dark fringe on any new background.
+                    f = a / 255
+                    px[x, y] = tuple(max(0, min(255, round((c - (1 - f) * b) / f))) for c, b in zip(px[x, y], bg))
     # Keep only what is joined to the middle of the crop: a sliver of a
     # neighbouring card caught by the box must not come along.
     keep = alpha.point(lambda v: 255 if v else 0)
@@ -222,11 +236,18 @@ def _composite_clipped(canvas, piece, x, y):
 
 def place(canvas, piece, cx, cy, scale=1.0, angle=0.0):
     """Paste a piece centred at (cx, cy), scaled and rotated, over a soft drop
-    shadow so it floats above the background."""
-    if scale != 1.0:
-        piece = piece.resize((round(piece.width * scale), round(piece.height * scale)), Image.LANCZOS)
+    shadow so it floats above the background.
+
+    Rotation works at SS x the final size and is then scaled down, with
+    premultiplied alpha ("RGBa"): a plain rotate leaves stair-stepped,
+    un-antialiased edges and dark fringes where transparent pixels bleed."""
+    tw, th = round(piece.width * scale), round(piece.height * scale)
     if angle:
-        piece = piece.rotate(angle, resample=Image.BICUBIC, expand=True)
+        big = piece.convert("RGBa").resize((tw * SS, th * SS), Image.LANCZOS)
+        big = big.rotate(angle, resample=Image.BICUBIC, expand=True)
+        piece = big.resize((round(big.width / SS), round(big.height / SS)), Image.LANCZOS).convert("RGBA")
+    elif scale != 1.0:
+        piece = piece.convert("RGBa").resize((tw, th), Image.LANCZOS).convert("RGBA")
     x, y = round(cx - piece.width / 2), round(cy - piece.height / 2)
     pad = 80
     sh = Image.new("RGBA", (piece.width + pad * 2, piece.height + pad * 2), (0, 0, 0, 0))
