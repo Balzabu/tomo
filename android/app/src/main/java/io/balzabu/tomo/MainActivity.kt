@@ -16,6 +16,13 @@ class MainActivity : ReactActivity() {
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
+    // tomo: a restored task replays its original intent - open plain instead.
+    if (savedInstanceState != null ||
+        (intent.flags and android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+      intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+        .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        .setComponent(intent.component)
+    }
     super.onCreate(null)
   }
 

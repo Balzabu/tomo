@@ -35,10 +35,10 @@ export function BookShareModal({ visible, book, onClose }: Props) {
       : book.status === 'finished'
       ? 100
       : 0;
-  const subtitle =
+  const progress =
     book.pageCount && book.status === 'reading'
-      ? `${book.currentPage}/${book.pageCount} · ${pct}%`
-      : tr(`status.${book.status}`);
+      ? { pct, label: tr('share.progress', { page: book.currentPage, total: book.pageCount, pct }) }
+      : undefined;
 
   const shareAsImage = async () => {
     if (busy) return;
@@ -78,11 +78,12 @@ export function BookShareModal({ visible, book, onClose }: Props) {
           width={CARD_W}
           content={{
             kind: 'book',
+            kicker: tr(`share.kicker.${book.status}`),
             title: book.title,
             author,
             coverUrl: book.coverUrl,
             rating: book.rating,
-            subtitle,
+            progress,
           }}
         />
       </ScrollView>

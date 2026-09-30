@@ -33,7 +33,7 @@ export interface KV {
 export const V1_KEY = 'tomo:data:v1';
 export const META_KEY = 'tomo:data:v2:meta';
 export const CHUNK_PREFIX = 'tomo:data:v2:';
-export const COLLECTIONS = ['books', 'sessions', 'notes', 'shelves', 'goals'] as const;
+export const COLLECTIONS = ['books', 'sessions', 'notes', 'shelves', 'goals', 'deleted'] as const;
 export type Collection = (typeof COLLECTIONS)[number];
 
 /** Target chunk size in JS chars. SQLite stores UTF-8 (≤3 bytes/char), so a
@@ -55,6 +55,7 @@ export const emptyAppData: AppData = {
   notes: [],
   shelves: [],
   goals: [],
+  deleted: [],
   version: 1,
 };
 
@@ -95,53 +96,156 @@ export function parseV1(raw: string): AppData {
     notes: Array.isArray(parsed.notes) ? parsed.notes : [],
     shelves: Array.isArray(parsed.shelves) ? parsed.shelves : [],
     goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+    deleted: Array.isArray(parsed.deleted) ? parsed.deleted : [],
   };
 }
 
+/** What the last successful write stored under each chunk key: the item
+ *  objects it was built from (and its length). Lets the next write skip
+ *  chunks whose items are all the same objects - valid only while it mirrors
+ *  the disk exactly (see storage.ts for when it is dropped). The JSON itself
+ *  is not kept: that would hold a second copy of the library in memory. */
+export type WrittenChunks = Map<string, { items: readonly unknown[]; chars: number }>;
+
 export interface Encoded {
+  /** manifest + the chunks to write: every chunk without `prev`, otherwise
+   *  only those whose items changed */
   pairs: [string, string][];
+  /** every chunk key of this encoding (written now or unchanged on disk) */
+  chunkKeys: string[];
+  /** the chunks of this encoding, to pass as `prev` once it is on disk */
+  written: WrittenChunks;
   manifest: Manifest;
   /** total serialised chars across all chunks (rough on-disk footprint) */
   totalChars: number;
-  /** items that alone exceed CHUNK_CHARS (they get a chunk of their own) */
+  /** items that alone exceed CHUNK_CHARS (stored shortened, see storedJson) */
   oversizedItems: number;
 }
 
+/** Cut a string to at most `max` chars without splitting a surrogate pair. */
+function clip(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const code = s.charCodeAt(max - 1);
+  return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+}
+
+/** The JSON stored for an item. One that alone exceeds CHUNK_CHARS would
+ *  need a row the next launch can't read back (the CursorWindow limit), and
+ *  with it the whole library - so its longest text fields are shortened until
+ *  it fits (a book keeps its sessions and notes, it loses the tail of an
+ *  enormous description). An item that still doesn't fit (bloated with
+ *  something other than text) is left out, with a warning: losing one record
+ *  beats losing them all. The in-memory copy is untouched until restart. */
+function storedJson(item: unknown, s: string): string | null {
+  if (s.length <= CHUNK_CHARS) return s;
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+  const copy = { ...(item as Record<string, unknown>) };
+  const texts = Object.keys(copy)
+    .filter((k) => typeof copy[k] === 'string')
+    .sort((a, b) => (copy[b] as string).length - (copy[a] as string).length);
+  let json = s;
+  for (const k of texts) {
+    const excess = json.length - CHUNK_CHARS;
+    if (excess <= 0) break;
+    const v = copy[k] as string;
+    copy[k] = clip(v, Math.max(0, v.length - excess - 16));
+    json = JSON.stringify(copy);
+    // escapes (quotes, newlines) make the JSON longer than the text: keep cutting
+    while (json.length > CHUNK_CHARS && (copy[k] as string).length > 0) {
+      const cur = copy[k] as string;
+      copy[k] = clip(cur, Math.floor(cur.length / 2));
+      json = JSON.stringify(copy);
+    }
+  }
+  if (json.length <= CHUNK_CHARS) return json;
+  console.warn('storage: a record is too large to store and was left out');
+  return null;
+}
+
+// Per-item JSON, keyed by object identity. The store never mutates an item in
+// place (every change spreads into a new object), so a cached string stays
+// valid for as long as its object lives - and a save re-stringifies only what
+// changed instead of the whole library.
+// Items stored shortened or left out (null) are cached as such, and counted.
+const jsonCache = new WeakMap<object, string | null>();
+const oversized = new WeakSet<object>();
+function itemJson(item: unknown): string | null {
+  if (typeof item !== 'object' || item === null) return JSON.stringify(item);
+  let s = jsonCache.get(item);
+  if (s === undefined) {
+    const full = JSON.stringify(item);
+    s = storedJson(item, full);
+    if (s !== full) oversized.add(item);
+    jsonCache.set(item, s);
+  }
+  return s;
+}
+
 /** Serialise the library into manifest + chunk pairs. Chunks are split on
- *  item boundaries so each one is an independently parseable JSON array. */
-export function encodeData(data: AppData): Encoded {
+ *  item boundaries so each one is an independently parseable JSON array.
+ *  Boundaries are laid out greedily from the *end* of each collection: new
+ *  items are prepended, so an add only changes chunk 0 and the others stay
+ *  byte-identical (and are skipped by the write when `prev` knows them). */
+export function encodeData(data: AppData, prev?: WrittenChunks | null): Encoded {
   const pairs: [string, string][] = [];
-  const chunks = { books: 0, sessions: 0, notes: 0, shelves: 0, goals: 0 } as Record<Collection, number>;
+  const chunkKeys: string[] = [];
+  const written: WrittenChunks = new Map();
+  const chunks = { books: 0, sessions: 0, notes: 0, shelves: 0, goals: 0, deleted: 0 } as Record<Collection, number>;
   let totalChars = 0;
   let oversizedItems = 0;
 
   for (const coll of COLLECTIONS) {
     const items = data[coll] as unknown[];
-    let parts: string[] = [];
+    const strs = new Array<string | null>(items.length);
+    // [start, end) ranges, collected back to front
+    const ranges: [number, number][] = [];
+    let end = items.length;
     let size = 0;
-    const flush = () => {
-      if (parts.length === 0) return;
-      const body = `[${parts.join(',')}]`;
-      pairs.push([chunkKey(coll, chunks[coll]), body]);
-      chunks[coll] += 1;
-      totalChars += body.length;
-      parts = [];
-      size = 0;
-    };
-    for (const item of items) {
-      const s = JSON.stringify(item);
-      if (s.length > CHUNK_CHARS) oversizedItems += 1;
-      if (parts.length > 0 && size + s.length + 1 > CHUNK_CHARS) flush();
-      parts.push(s);
-      size += s.length + 1;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const s = itemJson(items[i]);
+      strs[i] = s;
+      if (oversized.has(items[i] as object)) oversizedItems += 1;
+      const len = s == null ? 0 : s.length + 1;
+      if (end > i + 1 && size + len > CHUNK_CHARS) {
+        ranges.push([i + 1, end]);
+        end = i + 1;
+        size = 0;
+      }
+      size += len;
     }
-    flush();
+    if (end > 0) ranges.push([0, end]);
+    ranges.reverse();
+
+    ranges.forEach(([start, stop], idx) => {
+      const key = chunkKey(coll, idx);
+      const slice = items.slice(start, stop);
+      const old = prev?.get(key);
+      let chars: number;
+      if (old && old.items.length === slice.length && old.items.every((x, j) => x === slice[j])) {
+        chars = old.chars;
+      } else {
+        const body = `[${strs.slice(start, stop).filter((x) => x != null).join(',')}]`;
+        pairs.push([key, body]);
+        chars = body.length;
+      }
+      chunkKeys.push(key);
+      written.set(key, { items: slice, chars });
+      totalChars += chars;
+    });
+    chunks[coll] = ranges.length;
   }
 
   const manifest: Manifest = { version: data.version, chunks, writtenAt: Date.now() };
   const meta = JSON.stringify(manifest);
   totalChars += meta.length;
-  return { pairs: [[META_KEY, meta], ...pairs], manifest, totalChars, oversizedItems };
+  return {
+    pairs: [[META_KEY, meta], ...pairs],
+    chunkKeys,
+    written,
+    manifest,
+    totalChars,
+    oversizedItems,
+  };
 }
 
 /** Parse and concatenate a collection's chunks. null when any chunk is
@@ -174,6 +278,9 @@ export interface LoadResult {
   migratedFromV1?: boolean;
   /** the unparseable v1 blob, for quarantine */
   rawV1?: string;
+  /** removes a leftover v1 blob; the caller runs it (queued) once the load
+   *  has returned, so it stays off the launch path */
+  cleanup?: () => Promise<void>;
 }
 
 /** Read a v2 snapshot given its manifest text. The manifest and the chunks
@@ -257,12 +364,14 @@ export async function loadFromKV(kv: KV, opts?: { readOnly?: boolean }): Promise
         // A leftover v1 blob (process died between the v2 write and the v1
         // delete) is now redundant: v1 is never written again, so v2 is at
         // least as fresh. Checked via getAllKeys - reading it could throw.
-        try {
-          const all = await kv.getAllKeys();
-          if (all.includes(V1_KEY)) await kv.removeItem(V1_KEY);
-        } catch {
-          // best-effort
-        }
+        v2.cleanup = async () => {
+          try {
+            const all = await kv.getAllKeys();
+            if (all.includes(V1_KEY)) await kv.removeItem(V1_KEY);
+          } catch {
+            // best-effort
+          }
+        };
       }
       return v2;
     }
@@ -315,6 +424,9 @@ export async function loadFromKV(kv: KV, opts?: { readOnly?: boolean }): Promise
 
 export interface SaveResult {
   manifest: Manifest;
+  /** pass as `prevWritten` to the next save (only while nothing else has
+   *  touched the chunks) */
+  written: WrittenChunks;
   totalChars: number;
   oversizedItems: number;
   /** stale chunks could not be removed: the caller should not trust its
@@ -324,9 +436,15 @@ export interface SaveResult {
 
 /** Write the library as manifest + chunks (one multiSet), then remove chunks
  *  a previous, larger write left beyond the new counts. Throws when the write
- *  itself fails. */
-export async function saveToKV(kv: KV, data: AppData, prevManifest?: Manifest | null): Promise<SaveResult> {
-  const enc = encodeData(data);
+ *  itself fails. With `prevWritten` (what the previous successful save left
+ *  on disk) chunks whose content is unchanged are not rewritten. */
+export async function saveToKV(
+  kv: KV,
+  data: AppData,
+  prevManifest?: Manifest | null,
+  prevWritten?: WrittenChunks | null
+): Promise<SaveResult> {
+  const enc = encodeData(data, prevWritten);
   await kv.multiSet(enc.pairs);
 
   // Chunks beyond the new counts are leftovers of a larger previous write.
@@ -334,7 +452,7 @@ export async function saveToKV(kv: KV, data: AppData, prevManifest?: Manifest | 
   // it (first save of the session, or after a failed cleanup) list the keys.
   let cleanupFailed = false;
   const sweep = async () => {
-    const live = new Set(enc.pairs.map(([k]) => k));
+    const live = new Set([META_KEY, ...enc.chunkKeys]);
     const all = await kv.getAllKeys();
     const stale = all.filter((k) => k.startsWith(CHUNK_PREFIX) && !live.has(k));
     if (stale.length) await kv.multiRemove(stale);
@@ -362,6 +480,7 @@ export async function saveToKV(kv: KV, data: AppData, prevManifest?: Manifest | 
   }
   return {
     manifest: enc.manifest,
+    written: enc.written,
     totalChars: enc.totalChars,
     oversizedItems: enc.oversizedItems,
     cleanupFailed,

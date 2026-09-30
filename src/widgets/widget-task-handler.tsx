@@ -1,7 +1,8 @@
 import React from 'react';
 import { getWidgetInfo } from 'react-native-android-widget';
 import type { WidgetRepresentation, WidgetTaskHandlerProps } from 'react-native-android-widget';
-import { computeStats, buildHeatmap, computeGoalProgress } from '@/lib/stats';
+import { computeStats, buildHeatmap, dailyTotals } from '@/lib/stats';
+import { goalProgress, normalizeGoals } from '@/lib/goals';
 import { monthsShort, weekdayInitials } from '@/i18n/strings';
 import { migrateLegacyKeys } from '@/lib/migrate';
 import { emptyData } from '@/lib/storage';
@@ -18,7 +19,28 @@ import {
   WidgetContext,
   WidgetSize,
 } from './widget-shared';
-import { getReadingSelection, removeReadingSelection, setReadingSelection } from './widget-prefs';
+import {
+  bumpQuoteOffset,
+  getQuoteOffset,
+  cycleReadingSelection,
+  getReadingSelection,
+  removeQuoteOffset,
+  removeReadingSelection,
+} from './widget-prefs';
+import { QuoteWidget } from './QuoteWidget';
+import { PrivateWidget } from './widget-ui';
+import { quoteOfDay } from '@/lib/quoteOfDay';
+import { planProgress } from '@/lib/plan';
+import type { AppData, Book, ReadingSession } from '@/types';
+import type { Theme } from '@/theme/theme';
+
+/** Today's reading-plan quota for the "Currently reading" widget. */
+function planLine(book: Book, sessions: ReadingSession[], t: (k: string, p?: Record<string, string | number>) => string) {
+  const p = planProgress(book, sessions);
+  if (!p || p.status === 'done' || p.status === 'overdue') return undefined;
+  const left = Math.max(0, p.todayTarget - p.todayRead);
+  return left === 0 ? { text: t('widget.planDone'), done: true } : { text: t('widget.planLeft', { n: left }), done: false };
+}
 import { CurrentlyReadingWidget } from './CurrentlyReadingWidget';
 import {
   QUICKSTART_MAX_ROWS,
@@ -29,8 +51,21 @@ import {
 import { StreakGoalData, StreakGoalWidget } from './StreakGoalWidget';
 import { FUTURE, heatmapLayout, HeatmapWidget, TODAY_EMPTY } from './HeatmapWidget';
 
-const WIDGET_NAMES = ['CurrentlyReading', 'QuickStart', 'StreakGoal', 'Heatmap'] as const;
+const WIDGET_NAMES = ['CurrentlyReading', 'QuickStart', 'StreakGoal', 'Heatmap', 'Quote'] as const;
 type WidgetName = (typeof WIDGET_NAMES)[number];
+
+// The streak for the "Currently reading" and "Streak & goal" widgets: one
+// refresh renders every placed widget from the same snapshot, so it is
+// computed once per (books, sessions, day) rather than once per widget.
+let streakMemo: { books: Book[]; sessions: ReadingSession[]; day: string; streak: number } | null = null;
+function currentStreak(data: AppData): number {
+  const day = toDateKey();
+  const m = streakMemo;
+  if (m && m.books === data.books && m.sessions === data.sessions && m.day === day) return m.streak;
+  const streak = computeStats(data.books, data.sessions).currentStreak;
+  streakMemo = { books: data.books, sessions: data.sessions, day, streak };
+  return streak;
+}
 
 /** Render a widget, as a light/dark pair when the theme follows the system. */
 export async function renderWidgetFor(
@@ -39,12 +74,12 @@ export async function renderWidgetFor(
   widgetId?: number,
   size?: WidgetSize
 ): Promise<WidgetRepresentation> {
-  if (!ctx.systemThemes) return renderForName(name, ctx, widgetId, size);
+  // The data work (and cover lookups) doesn't depend on the theme: do it once
+  // and draw both variants from it.
+  const draw = await prepareWidget(name, ctx, widgetId, size);
+  if (!ctx.systemThemes) return draw(ctx.theme);
   const { light, dark } = ctx.systemThemes;
-  return {
-    light: await renderForName(name, { ...ctx, theme: light }, widgetId, size),
-    dark: await renderForName(name, { ...ctx, theme: dark }, widgetId, size),
-  };
+  return { light: draw(light), dark: draw(dark) };
 }
 
 export async function renderForName(
@@ -53,38 +88,55 @@ export async function renderForName(
   widgetId?: number,
   size?: WidgetSize
 ): Promise<React.JSX.Element> {
-  const { data, theme, t, lang } = ctx;
+  return (await prepareWidget(name, ctx, widgetId, size))(ctx.theme);
+}
+
+/** Everything a widget shows, resolved; the returned function only lays it
+ *  out in a given theme. */
+async function prepareWidget(
+  name: WidgetName,
+  ctx: WidgetContext,
+  widgetId?: number,
+  size?: WidgetSize
+): Promise<(theme: Theme) => React.JSX.Element> {
+  const { data, t, lang } = ctx;
+
+  // App lock on (and "hide contents" on): a neutral card instead of the
+  // library, quotes or activity on the home screen.
+  if (ctx.private) return (theme) => <PrivateWidget theme={theme} t={t} />;
 
   switch (name) {
     case 'CurrentlyReading': {
       const list = readingBooks(data);
-      if (list.length === 0) return <CurrentlyReadingWidget theme={theme} t={t} size={size} />;
+      if (list.length === 0) return (theme) => <CurrentlyReadingWidget theme={theme} t={t} size={size} />;
 
       // Honour the per-widget book selection; fall back to the most-read book.
       const selectedId = widgetId != null ? await getReadingSelection(widgetId) : undefined;
       const book = list.find((b) => b.id === selectedId) ?? list[0];
       const index = Math.max(0, list.findIndex((b) => b.id === book.id));
 
-      const streak = computeStats(data.books, data.sessions).currentStreak;
+      const streak = currentStreak(data);
       const coverImage = await coverToWidgetImage(book.coverUrl);
-      return (
+      const shown = {
+        id: book.id,
+        title: book.title,
+        author: book.authors.join(', ') || t('common.unknownAuthor'),
+        pct: progressPct(book),
+        currentPage: book.currentPage,
+        pageCount: book.pageCount,
+        totalSeconds: bookTotalSeconds(data, book.id),
+        streak,
+        coverImage,
+        plan: planLine(book, data.sessions, t),
+      };
+      return (theme) => (
         <CurrentlyReadingWidget
           theme={theme}
           t={t}
           size={size}
           index={index}
           total={list.length}
-          book={{
-            id: book.id,
-            title: book.title,
-            author: book.authors.join(', ') || t('common.unknownAuthor'),
-            pct: progressPct(book),
-            currentPage: book.currentPage,
-            pageCount: book.pageCount,
-            totalSeconds: bookTotalSeconds(data, book.id),
-            streak,
-            coverImage,
-          }}
+          book={shown}
         />
       );
     }
@@ -111,34 +163,55 @@ export async function renderForName(
           coverImage: await coverToWidgetImage(b.coverUrl),
         }))
       );
-      return <QuickStartWidget theme={theme} t={t} size={size} books={books} more={more} />;
+      return (theme) => <QuickStartWidget theme={theme} t={t} size={size} books={books} more={more} />;
     }
 
     case 'StreakGoal': {
-      const streak = computeStats(data.books, data.sessions).currentStreak;
+      const streak = currentStreak(data);
+      const goals = normalizeGoals(data.goals);
       const dailyGoal =
-        data.goals.find((g) => g.type === 'minutes_per_day') ??
-        data.goals.find((g) => g.type === 'pages_per_day');
+        goals.find((g) => g.period === 'day' && g.metric === 'minutes') ??
+        goals.find((g) => g.period === 'day' && g.metric === 'pages');
 
       const sg: StreakGoalData = {
         streak,
         todayMinutes: Math.round(todaySeconds(data) / 60),
       };
       if (dailyGoal) {
-        const prog = computeGoalProgress(dailyGoal, data.books, data.sessions);
+        const prog = goalProgress(dailyGoal, data.books, data.sessions);
         sg.goal = {
           current: prog.current,
           target: dailyGoal.target,
-          unit: dailyGoal.type === 'minutes_per_day' ? t('unit.min') : t('unit.pages'),
+          unit: dailyGoal.metric === 'minutes' ? t('unit.min') : t('unit.pages'),
         };
       }
 
-      return <StreakGoalWidget theme={theme} t={t} size={size} data={sg} />;
+      return (theme) => <StreakGoalWidget theme={theme} t={t} size={size} data={sg} />;
+    }
+
+    case 'Quote': {
+      const offset = widgetId != null ? await getQuoteOffset(widgetId) : 0;
+      const q = quoteOfDay(data.notes, toDateKey(), offset);
+      const book = q ? data.books.find((b) => b.id === q.bookId) : undefined;
+      const quoteCount = data.notes.filter((n) => n.type === 'quote' && n.text.trim()).length;
+      const quote =
+        q && book
+          ? {
+              text: q.text,
+              bookId: book.id,
+              title: book.title,
+              author: book.authors[0],
+              page: q.page,
+              coverImage: await coverToWidgetImage(book.coverUrl),
+              canShuffle: quoteCount > 1,
+            }
+          : undefined;
+      return (theme) => <QuoteWidget theme={theme} t={t} size={size} quote={quote} />;
     }
 
     case 'Heatmap': {
       const { weeks } = heatmapLayout(size);
-      const { cells, cols } = buildHeatmap(data.sessions, weeks);
+      const { cells, cols } = buildHeatmap(dailyTotals(data.sessions), weeks);
       // The grid is padded to the end of the current week: hide the days that
       // haven't happened yet and outline today.
       const todayKey = toDateKey();
@@ -167,7 +240,7 @@ export async function renderForName(
       const last = monthOf(lastShown?.date);
       const monthRange = first && last ? (first === last ? first : `${first} – ${last}`) : '';
 
-      return (
+      return (theme) => (
         <HeatmapWidget
           theme={theme}
           t={t}
@@ -267,19 +340,24 @@ async function handle(props: WidgetTaskHandlerProps, name: WidgetName): Promise<
       // The only custom click action is cycling the "Currently reading" book.
       if (props.clickAction === 'CYCLE_READING' && name === 'CurrentlyReading') {
         const ctx = await loadWidgetContext();
-        const list = readingBooks(ctx.data);
-        if (list.length > 1) {
-          const currentId = await getReadingSelection(widgetId);
-          const curIdx = Math.max(0, list.findIndex((b) => b.id === currentId));
-          const next = list[(curIdx + 1) % list.length];
-          await setReadingSelection(widgetId, next.id);
+        // Private mode (app lock on): no browsing the library from the home screen.
+        if (!ctx.private) await cycleReadingSelection(widgetId, readingBooks(ctx.data).map((b) => b.id));
+        props.renderWidget(await renderWidgetFor(name, ctx, widgetId, await currentSize(name, widgetId, size)));
+      }
+      if (props.clickAction === 'NEXT_QUOTE' && name === 'Quote') {
+        // One load serves the private-mode check and the render (the offset
+        // is read at render time, after the bump).
+        const ctx = await loadWidgetContext();
+        if (!ctx.private) {
+          await bumpQuoteOffset(widgetId);
+          props.renderWidget(await renderWidgetFor(name, ctx, widgetId, await currentSize(name, widgetId, size)));
         }
-        props.renderWidget(await renderWidgetFor(name, ctx, widgetId, size));
       }
       // Other clicks use the built-in OPEN_URI action (handled natively).
       break;
     }
     case 'WIDGET_DELETED': {
+      if (name === 'Quote') await removeQuoteOffset(widgetId);
       if (name === 'CurrentlyReading') {
         // The only handler branch that skips loadWidgetContext (where the
         // legacy-key migration normally runs): migrate first, or a

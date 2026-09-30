@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Pressable,
+  StyleProp,
   StyleSheet,
   Text,
+  TextStyle,
   View,
 } from 'react-native';
 import { TextInput } from '@/components/ThemedTextInput';
@@ -20,13 +22,14 @@ import {
 import { onColor, radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
+import { NoteModal } from '@/components/NoteEditor';
+import { useSnackbar } from '@/store/useSnackbar';
+import { useLock } from '@/store/useLock';
+import { NoteType } from '@/types';
 import { BookCover } from '@/components/BookCover';
-import { formatClock, formatTimeOfDay, pagesError, parsePageField } from '@/lib/utils';
-import {
-  requestNotificationPermission,
-  showSessionNotification,
-  dismissSessionNotification,
-} from '@/lib/notifications';
+import { formatClock, formatTimeOfDay, MAX_SESSION_MINUTES, pagesError, parsePageField, toDateKey } from '@/lib/utils';
+import { requestNotificationPermission, dismissSessionNotification } from '@/lib/notifications';
+import { postSessionNotification } from '@/lib/sessionNotification';
 
 export default function TimerScreen() {
   const t = useTheme();
@@ -36,9 +39,15 @@ export default function TimerScreen() {
   const addSession = useStore((s) => s.addSession);
   const active = useActiveSession((s) => s.active);
   const finishRequested = useActiveSession((s) => s.finishRequested);
+  const captureRequested = useActiveSession((s) => s.captureRequested);
+  const addNote = useStore((s) => s.addNote);
+  // Quick capture while reading: the clock keeps running behind the dialog.
+  const [capture, setCapture] = useState<NoteType | null>(null);
+  const [captured, setCaptured] = useState(0);
 
   const [phase, setPhase] = useState<'timing' | 'finish'>(finish === '1' ? 'finish' : 'timing');
-  const [, force] = useState(0); // drives the per-tick clock re-render
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   const savingRef = useRef(false); // guards against a double "Save" tap
   const allowLeaveRef = useRef(false); // set when leaving intentionally (save/cancel)
   const initRef = useRef<string | null>(null); // bookId the bootstrap ran for
@@ -46,11 +55,13 @@ export default function TimerScreen() {
   const navigation = useNavigation();
 
   // Elapsed is derived from the persisted session (wall-clock based), so it is
-  // correct after the screen has been off and survives a process restart.
-  const elapsed = active ? sessionElapsed(active, Date.now()) : 0;
+  // correct after the screen has been off and survives a process restart. Read
+  // on demand; only <ElapsedClock> re-renders as it advances.
+  const elapsedNow = () => {
+    const a = useActiveSession.getState().active;
+    return a ? sessionElapsed(a, Date.now()) : 0;
+  };
   const running = active?.runningSince != null;
-  const elapsedRef = useRef(0);
-  elapsedRef.current = elapsed;
 
   // When opened from a widget/notification on a cold start there's no screen to
   // go back to, so router.back() would no-op. Fall back to the book detail.
@@ -58,6 +69,20 @@ export default function TimerScreen() {
     allowLeaveRef.current = true;
     if (router.canGoBack()) router.back();
     else router.replace(`/book/${bookId}`);
+  };
+
+  // Save an interrupted session (≥ 1 min) as it stood at its last heartbeat.
+  const bankSession = (a: NonNullable<ReturnType<typeof useActiveSession.getState>['active']>) => {
+    const secs = sessionElapsedAtLastTick(a);
+    const exists = useStore.getState().books.some((b) => b.id === a.bookId);
+    if (!exists || secs < 60) return;
+    addSession({
+      bookId: a.bookId,
+      startTime: a.startedAt,
+      endTime: Math.max(a.startedAt + secs * 1000, a.lastTick),
+      durationSeconds: secs,
+      pagesRead: 0,
+    });
   };
 
   const discard = () => {
@@ -78,23 +103,45 @@ export default function TimerScreen() {
   // would leave the old book's session on the clock - and record its time
   // against the new book on save.
   const sessionHydrated = useActiveSession((s) => s.hydrated);
+  // Opened from a widget or notification while the app is locked: nothing
+  // starts (no timer, no notification, no session on disk) until the PIN.
+  const lockedNow = useLock((s) => s.locked);
   useEffect(() => {
-    if (initRef.current === bookId || !book || !sessionHydrated) return;
+    if (initRef.current === bookId || !book || !sessionHydrated || lockedNow) return;
     const swapped = initRef.current != null;
     initRef.current = bookId;
     if (swapped) {
       // Reset the per-book UI state before bootstrapping the new session.
       savingRef.current = false;
+      setCapture(null);
+      setCaptured(0);
       setPhase(finish === '1' ? 'finish' : 'timing');
       setStartPage(String(book.currentPage));
       setEndPage(String(book.currentPage));
     }
     const s = useActiveSession.getState();
-    const a = s.active;
+    let a = s.active;
+    // Yesterday's session for this book (left running, or frozen after the
+    // app was killed): keep that reading on its own day instead of silently
+    // continuing it today, and start fresh.
+    if (a && a.bookId === bookId && finish !== '1' && toDateKey(a.lastTick) !== toDateKey()) {
+      bankSession(a);
+      s.clear();
+      a = null;
+    }
     if (a && a.bookId === bookId) {
       s.markAdopted();
-      if (finish === '1') s.pause(); // freeze for the finish screen
-      else s.resume(); // continue an existing session
+      if (finish === '1') {
+        wasRunningRef.current = a.runningSince != null;
+        s.pause(); // freeze for the finish screen
+      } else s.resume(); // continue an existing session
+      return;
+    }
+    // "Finish" (a notification) for a session that no longer exists: nothing
+    // to finish - never start a new one behind the finish form.
+    if (finish === '1') {
+      allowLeaveRef.current = true;
+      router.replace(`/book/${bookId}`);
       return;
     }
     if (a) {
@@ -102,17 +149,7 @@ export default function TimerScreen() {
       // while one was running). Dropping it silently can destroy real reading
       // time, so bank anything meaningful as a session first - capped at its
       // last heartbeat, the same way the recovery flow measures it.
-      const secs = sessionElapsedAtLastTick(a);
-      const strayExists = useStore.getState().books.some((b) => b.id === a.bookId);
-      if (strayExists && secs >= 60) {
-        addSession({
-          bookId: a.bookId,
-          startTime: a.startedAt,
-          endTime: a.startedAt + secs * 1000,
-          durationSeconds: secs,
-          pagesRead: 0,
-        });
-      }
+      bankSession(a);
       s.clear();
     }
     s.start(bookId);
@@ -120,15 +157,7 @@ export default function TimerScreen() {
       const granted = await requestNotificationPermission(tr('notif.channelReminders'));
       if (!granted) return;
       const startedAt = useActiveSession.getState().active?.startedAt ?? Date.now();
-      const id = await showSessionNotification(
-        {
-          title: tr('timer.notifTitle', { title: book.title }),
-          body: tr('timer.notifBody', { time: formatTimeOfDay(startedAt) }),
-          finishLabel: tr('timer.notifFinish'),
-          channelName: tr('notif.channelSession'),
-        },
-        bookId
-      );
+      const id = await postSessionNotification(tr, bookId, book.title, startedAt);
       if (!id) return;
       // The session may have been discarded (or replaced) while the permission
       // prompt / notification post was in flight - dismiss the notification
@@ -139,41 +168,87 @@ export default function TimerScreen() {
       }
       useActiveSession.getState().setNotificationId(id);
     })();
-  }, [bookId, finish, book, tr, sessionHydrated]);
+  }, [bookId, finish, book, tr, sessionHydrated, lockedNow]);
 
   // A "Finish" tap on the notification while the timer is already mounted: jump
-  // to the finish screen instead of stacking a second timer.
+  // to the finish screen instead of stacking a second timer. Waits while a
+  // quote is being typed (switching would throw the text away).
   useEffect(() => {
-    if (!finishRequested) return;
+    // Nothing changes behind the lock screen: handled once unlocked.
+    if (!finishRequested || capture !== null || lockedNow) return;
     const s = useActiveSession.getState();
+    // Already on the finish form (typed pages, "was running" state): keep it.
+    if (phaseRef.current === 'finish') {
+      s.clearFinishRequest();
+      return;
+    }
+    wasRunningRef.current = s.active?.runningSince != null;
     s.pause();
     s.clearFinishRequest();
     setEndPage(String(Math.max(book?.currentPage ?? 0, Number(startPage) || 0)));
     setPhase('finish');
-  }, [finishRequested]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [finishRequested, capture, lockedNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Smooth clock + an occasional heartbeat so a kill-recovery knows how far the
-  // session got (the heartbeat is throttled to keep disk writes rare).
+  // "Add quote" tapped on the ongoing notification - opened only once the
+  // lock screen (if any) is gone, never on top of it.
+  const appLocked = useLock((s) => s.locked);
+  useEffect(() => {
+    if (!captureRequested || appLocked) return;
+    useActiveSession.getState().clearCaptureRequest();
+    if (phase === 'timing') setCapture('quote');
+  }, [captureRequested, appLocked]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // An occasional heartbeat so a kill-recovery knows how far the session got
+  // (throttled to keep disk writes rare).
   useEffect(() => {
     const id = setInterval(() => {
       const s = useActiveSession.getState();
       const a = s.active;
-      // Only re-render while the clock is actually advancing - a paused timer
-      // (or the finish form, where the session is frozen) shows a static time,
-      // and 4 forced renders/sec would just compete with typing.
-      if (a?.runningSince != null) {
-        force((n) => (n + 1) % 1_000_000);
-        if (Date.now() - a.lastTick > 15_000) s.tick();
-      }
-    }, 250);
+      if (a?.runningSince != null && Date.now() - a.lastTick > 15_000) s.tick();
+    }, 5_000);
     return () => clearInterval(id);
   }, []);
+
+  // The clock was left running overnight (the app stayed alive in the
+  // background): ask how much of that was reading instead of silently counting
+  // the whole night - stopped at the last activity until the user says so.
+  const checkStale = () => {
+    const s = useActiveSession.getState();
+    const a = s.active;
+    if (!a || a.bookId !== bookId || a.runningSince == null || phaseRef.current !== 'timing') return;
+    // A new day *and* a real gap: reading from 23:55 past midnight is fine.
+    if (useLock.getState().locked || toDateKey(a.lastTick) === toDateKey() || Date.now() - a.lastTick < 60 * 60_000) return;
+    const tickSecs = sessionElapsedAtLastTick(a);
+    const nowSecs = Math.min(MAX_SESSION_MINUTES * 60, sessionElapsed(a, Date.now()));
+    s.pauseAtLastTick();
+    const toFinish = (secs: number) => {
+      useActiveSession.getState().setElapsed(secs);
+      wasRunningRef.current = false;
+      setEndPage(String(Math.max(book?.currentPage ?? 0, Number(startPage) || 0)));
+      setPhase('finish');
+    };
+    Alert.alert(
+      tr('timer.staleTitle'),
+      tr('timer.staleMsg', { time: formatTimeOfDay(a.lastTick) }),
+      [
+        { text: tr('timer.recoverSaveNow', { n: Math.max(1, Math.round(nowSecs / 60)) }), onPress: () => toFinish(nowSecs) },
+        { text: tr('timer.recoverSaveTick', { n: Math.max(1, Math.round(tickSecs / 60)) }), onPress: () => toFinish(tickSecs) },
+      ],
+      { cancelable: false }
+    );
+  };
+  const checkStaleRef = useRef(checkStale);
+  checkStaleRef.current = checkStale;
+  useEffect(() => {
+    if (!lockedNow) checkStaleRef.current();
+  }, [lockedNow]);
 
   // Record a heartbeat the moment we go to the background (the most likely point
   // just before the OS freezes/kills the process).
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
       if (st !== 'active') useActiveSession.getState().tick();
+      else setTimeout(() => checkStaleRef.current(), 300); // after the lock decision
     });
     return () => sub.remove();
   }, []);
@@ -185,7 +260,7 @@ export default function TimerScreen() {
     const sub = (navigation as any).addListener('beforeRemove', (e: any) => {
       if (allowLeaveRef.current) return;
       if (useActiveSession.getState().active?.bookId !== bookId) return;
-      if (elapsedRef.current <= 0) {
+      if (elapsedNow() <= 0) {
         // Nothing timed yet (backed out within the first second): drop the
         // just-started session instead of leaving it running forever.
         discard();
@@ -233,6 +308,7 @@ export default function TimerScreen() {
   const save = () => {
     if (savingRef.current) return; // ignore repeated taps
     savingRef.current = true;
+    const elapsed = Math.min(elapsedNow(), MAX_SESSION_MINUTES * 60);
 
     // Nothing timed (e.g. an empty/stale timer): just leave, don't record it.
     if (elapsed <= 0) {
@@ -252,10 +328,15 @@ export default function TimerScreen() {
     const pagesRead =
       validStart != null && validEnd != null ? Math.max(0, validEnd - validStart) : 0;
 
+    const wasFinished = book.status === 'finished';
+    // The day a session counts for is the day of its end: when the clock
+    // stopped, not start + duration (a pause across midnight, or a session
+    // resumed later, would otherwise land on an earlier day).
+    const stoppedAt = a?.runningSince != null ? Date.now() : a?.lastTick ?? Date.now();
     addSession({
       bookId: book.id,
       startTime: startedAt,
-      endTime: startedAt + elapsed * 1000,
+      endTime: Math.max(startedAt + elapsed * 1000, stoppedAt),
       durationSeconds: elapsed,
       startPage: validStart,
       endPage: validEnd,
@@ -263,6 +344,18 @@ export default function TimerScreen() {
     });
     discard();
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // This session finished the book: offer the reading memory. When the
+    // book's own page is underneath it notices the change and offers it.
+    const nowFinished = useStore.getState().books.find((b) => b.id === book.id)?.status === 'finished';
+    const routes = (navigation as any).getState?.()?.routes ?? [];
+    const under = routes[routes.length - 2];
+    const detailBelow = under?.name === 'book/[id]' && under?.params?.id === book.id;
+    if (!wasFinished && nowFinished && !detailBelow) {
+      useSnackbar.getState().show(tr('memory.finished'), {
+        actionLabel: tr('memory.create'),
+        onAction: () => router.push(`/book/${book.id}?memory=1`),
+      });
+    }
     leave();
   };
 
@@ -286,13 +379,17 @@ export default function TimerScreen() {
       <View style={[styles.wrap, { backgroundColor: t.colors.bg }]}>
         <View style={styles.finishHead}>
           <Ionicons name="checkmark-circle" size={48} color={t.colors.success} />
-          <Text style={[styles.bigTime, { color: t.colors.text }]}>{formatClock(elapsed)}</Text>
+          <ElapsedClock style={[styles.bigTime, { color: t.colors.text }]} />
           <Text style={[styles.sub, { color: t.colors.textMuted }]}>{tr('timer.ofReading')}</Text>
         </View>
 
         <View style={styles.pageInputs}>
           <PageField label={tr('timer.fromPage')} value={startPage} onChange={setStartPage} t={t} />
-          <Ionicons name="arrow-forward" size={20} color={t.colors.textFaint} />
+          <View style={styles.arrowSlot}>
+            <View style={[styles.arrow, { backgroundColor: t.colors.cardAlt }]}>
+              <Ionicons name="arrow-forward" size={18} color={t.colors.textMuted} />
+            </View>
+          </View>
           <PageField label={tr('timer.toPage')} value={endPage} onChange={setEndPage} t={t} />
         </View>
         {pageErr ? (
@@ -334,7 +431,7 @@ export default function TimerScreen() {
         </Text>
       </View>
 
-      <Text style={[styles.timer, { color: t.colors.text }]}>{formatClock(elapsed)}</Text>
+      <ElapsedClock style={[styles.timer, { color: t.colors.text }]} />
 
       <Pressable
         onPress={toggle}
@@ -348,10 +445,37 @@ export default function TimerScreen() {
         {running ? tr('timer.reading') : tr('timer.paused')}
       </Text>
 
-      <View style={{ gap: spacing.md, marginTop: spacing.xxl, alignSelf: 'stretch' }}>
+      <View style={styles.captureRow}>
+        <Button label={tr('notes.kind.quote')} icon="chatbox-ellipses-outline" variant="secondary" style={{ flex: 1 }} onPress={() => setCapture('quote')} />
+        <Button label={tr('notes.kind.note')} icon="create-outline" variant="secondary" style={{ flex: 1 }} onPress={() => setCapture('note')} />
+      </View>
+      {captured > 0 ? (
+        <Text style={[styles.captured, { color: t.colors.success }]}>
+          {captured === 1 ? tr('timer.capturedOne') : tr('timer.captured', { n: captured })}
+        </Text>
+      ) : null}
+
+      <View style={{ gap: spacing.md, marginTop: spacing.xl, alignSelf: 'stretch' }}>
         <Button label={tr('timer.finishSave')} icon="flag" full onPress={goToFinish} />
         <Button label={tr('timer.cancel')} variant="ghost" full onPress={cancel} />
       </View>
+
+      <NoteModal
+        open={capture !== null}
+        type={capture ?? 'quote'}
+        defaultPage={Math.max(book.currentPage, parsePageField(startPage) ?? 0) || undefined}
+        subtitle={book.title}
+        onClose={() => setCapture(null)}
+        onSave={(text, page, type) => {
+          if (text.trim()) {
+            addNote({ bookId: book.id, type, text: text.trim(), page });
+            setCaptured((n) => n + 1);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            useSnackbar.getState().show(type === 'quote' ? tr('notes.quoteSaved') : tr('notes.noteSaved'));
+          }
+          setCapture(null);
+        }}
+      />
     </View>
   );
 }
@@ -384,6 +508,27 @@ function PageField({
   );
 }
 
+/** The running clock. Re-renders only itself, once per displayed second. */
+function ElapsedClock({ style }: { style: StyleProp<TextStyle> }) {
+  const active = useActiveSession((s) => s.active);
+  const [, force] = useState(0);
+  const running = active?.runningSince != null;
+  useEffect(() => {
+    if (!running) return;
+    let id: ReturnType<typeof setTimeout>;
+    const next = () => {
+      const a = useActiveSession.getState().active;
+      if (!a || a.runningSince == null) return;
+      force((n) => (n + 1) % 1_000_000);
+      // Wake up right after the next whole second of elapsed time.
+      id = setTimeout(next, 1000 - ((Date.now() - a.runningSince) % 1000) + 20);
+    };
+    next();
+    return () => clearTimeout(id);
+  }, [running, active?.runningSince]);
+  return <Text style={style}>{formatClock(active ? sessionElapsed(active, Date.now()) : 0)}</Text>;
+}
+
 const styles = StyleSheet.create({
   wrap: { flex: 1, padding: spacing.xl, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -404,10 +549,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   runState: { marginTop: spacing.md, fontSize: 14, fontWeight: '600' },
+  captureRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch', marginTop: spacing.xl },
+  captured: { marginTop: spacing.sm, fontSize: 13, fontWeight: '600' },
   finishHead: { alignItems: 'center', gap: 4, marginBottom: spacing.xl },
   bigTime: { fontSize: 44, fontWeight: '800', fontVariant: ['tabular-nums'] },
   sub: { fontSize: 14 },
-  pageInputs: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.lg },
+  pageInputs: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md },
+  arrowSlot: { height: 56, justifyContent: 'center' },
+  arrow: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   pageLabel: { fontSize: 13, fontWeight: '600' },
   pageInput: {
     width: 96,

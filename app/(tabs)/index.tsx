@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -402,7 +402,7 @@ export default function LibraryScreen() {
             onLongPress={handleRowLongPress}
           />
         )}
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        ItemSeparatorComponent={RowSeparator}
         ListEmptyComponent={
           <View style={{ gap: spacing.lg }}>
             <EmptyState
@@ -561,7 +561,15 @@ export default function LibraryScreen() {
   );
 }
 
-function ReadingCard({ book }: { book: Book }) {
+// Module-level so the list sees the same component on every render (an inline
+// one remounts every separator whenever the screen re-renders).
+function RowSeparator() {
+  return <View style={{ height: spacing.sm }} />;
+}
+
+// Memoised: the library re-renders on every keystroke in the search box and
+// every store change, while a reading card only changes with its own book.
+const ReadingCard = memo(function ReadingCard({ book }: { book: Book }) {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const progress =
@@ -585,7 +593,7 @@ function ReadingCard({ book }: { book: Book }) {
       </Pressable>
     </Pressable>
   );
-}
+});
 
 function AddSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useTheme();

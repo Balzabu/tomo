@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { withLockGrace } from '@/store/useLock';
 
 export type ShareImageResult = 'shared' | 'unavailable' | 'failed';
 
@@ -45,11 +46,11 @@ export async function shareViewAsImage(
 
     const uri = await captureRef(ref, { format: 'png', quality: 1 });
     lastCaptureUri = uri;
-    await Sharing.shareAsync(uri, {
+    await withLockGrace(() => Sharing.shareAsync(uri, {
       mimeType: 'image/png',
       dialogTitle: opts.dialogTitle ?? 'Tomo',
       UTI: 'public.png',
-    });
+    }));
     return 'shared';
   } catch {
     return 'failed';

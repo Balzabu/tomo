@@ -62,7 +62,15 @@
       "expo-asset",
       "expo-font",
       "expo-localization",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Tomo uses Face ID to unlock the app when the app lock is on."
+        }
+      ],
       "./plugins/withAndroidLintFix",
+      "./plugins/withShareTarget",
+      "./plugins/withPrivacyHardening",
       [
         "./plugins/withWidgetProviderExtras",
         {
@@ -82,6 +90,10 @@
             "Heatmap": {
               "minResizeWidth": "150dp",
               "minResizeHeight": "110dp"
+            },
+            "Quote": {
+              "minResizeWidth": "150dp",
+              "minResizeHeight": "70dp"
             }
           }
         }
@@ -141,6 +153,18 @@
               "previewImage": "./assets/widgets/heatmap.png",
               "updatePeriodMillis": 1800000,
               "resizeMode": "horizontal|vertical"
+            },
+            {
+              "name": "Quote",
+              "label": "Tomo · Quote of the day",
+              "description": "A quote you saved, a different one every day",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/widgets/quote.png",
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
             }
           ]
         }
@@ -154,7 +178,8 @@
             "buildToolsVersion": "36.0.0"
           }
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "locales": {
       "en": "./locales/en.json",

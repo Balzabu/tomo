@@ -1,5 +1,7 @@
-import { useColorScheme } from 'react-native';
+import { AppState, useColorScheme } from 'react-native';
+import { create } from 'zustand';
 import { useSettings } from '@/store/useSettings';
+import { DynamicPalettes, getDynamicPalettes } from '../../modules/tomo-system';
 
 export type SchemeId =
   | 'notte'
@@ -19,7 +21,9 @@ export type SchemeId =
   | 'solarizedLight'
   | 'gruvboxLight';
 
-export type SchemeChoice = 'system' | SchemeId;
+/** 'dynamic' = Material You: colours from the wallpaper (Android 12+),
+ *  light or dark following the system. */
+export type SchemeChoice = 'system' | 'dynamic' | SchemeId;
 
 export interface ThemeColors {
   primary: string;
@@ -251,17 +255,81 @@ export const SCHEME_LIST: SchemeId[] = [
 const DEFAULT_DARK: SchemeId = 'notte';
 const DEFAULT_LIGHT: SchemeId = 'giorno';
 
-export function resolveScheme(choice: SchemeChoice, system: 'light' | 'dark'): Theme {
-  if (choice === 'system') {
+/**
+ * Material 3 style roles from the system's dynamic palettes (tone keys follow
+ * Android: "50" is tone 95, "900" tone 10). Semantic colours (success, danger,
+ * star) stay fixed so meaning never depends on the wallpaper.
+ */
+export function dynamicTheme(p: DynamicPalettes, dark: boolean): Theme {
+  const { accent1: a1, accent3: a3, neutral1: n1, neutral2: n2 } = p;
+  const colors: ThemeColors = dark
+    ? {
+        primary: a1['200'], primaryDim: a1['300'], accent: a3['200'],
+        success: '#7ed69a', danger: '#ffb4ab', star: '#f2c35b',
+        bg: n1['900'], card: n1['800'], cardAlt: n2['700'], border: n2['700'],
+        text: n1['100'], textMuted: n2['200'], textFaint: n2['400'],
+        overlay: 'rgba(0,0,0,0.6)',
+      }
+    : {
+        primary: a1['600'], primaryDim: a1['700'], accent: a3['600'],
+        success: '#2e7d4f', danger: '#ba1a1a', star: '#b8860b',
+        bg: n1['50'], card: n1['10'], cardAlt: n2['100'], border: n2['200'],
+        text: n1['900'], textMuted: n2['700'], textFaint: n2['500'],
+        overlay: 'rgba(0,0,0,0.3)',
+      };
+  // Tagged with a built-in id for code that keys off it; `name` tells them apart.
+  return { id: dark ? DEFAULT_DARK : DEFAULT_LIGHT, name: 'Material You', dark, colors };
+}
+
+/** The wallpaper palettes, re-read when the app comes back to the foreground
+ *  (the wallpaper may have changed meanwhile). null when unsupported. */
+export const useDynamicPalettes = create<{ palettes: DynamicPalettes | null }>(() => ({
+  palettes: getDynamicPalettes(),
+}));
+AppState.addEventListener('change', (st) => {
+  if (st !== 'active') return;
+  const next = getDynamicPalettes();
+  const cur = useDynamicPalettes.getState().palettes;
+  if (JSON.stringify(next) !== JSON.stringify(cur)) useDynamicPalettes.setState({ palettes: next });
+});
+
+export function resolveScheme(
+  choice: SchemeChoice,
+  system: 'light' | 'dark',
+  palettes: DynamicPalettes | null = useDynamicPalettes.getState().palettes
+): Theme {
+  if (choice === 'dynamic' && palettes) return dynamicTheme(palettes, system === 'dark');
+  if (choice === 'system' || choice === 'dynamic') {
     return SCHEMES[system === 'light' ? DEFAULT_LIGHT : DEFAULT_DARK];
   }
   return SCHEMES[choice] ?? SCHEMES[DEFAULT_DARK];
 }
 
+/** Whether a choice follows the system light/dark setting. */
+export function followsSystem(choice: SchemeChoice): boolean {
+  return choice === 'system' || choice === 'dynamic';
+}
+
 export function useTheme(): Theme {
   const system = useColorScheme();
   const choice = useSettings((s) => s.scheme);
-  return resolveScheme(choice, system === 'light' ? 'light' : 'dark');
+  const palettes = useDynamicPalettes((s) => s.palettes);
+  return resolveScheme(choice, system === 'light' ? 'light' : 'dark', palettes);
+}
+
+/**
+ * The dimming behind dialogs and alerts. Plain black over warm colours reads
+ * as olive/green (a darkened yellow button, cream paper), so dark themes fade
+ * towards their own background instead, and light themes use a softer
+ * neutral that keeps the page recognisable.
+ */
+export function scrimColor(theme: Theme): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(theme.colors.bg);
+  if (theme.dark && m) {
+    const n = parseInt(m[1], 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0.8)`;
+  }
+  return theme.dark ? 'rgba(0,0,0,0.6)' : 'rgba(22,22,30,0.4)';
 }
 
 /** Best-contrast text/icon colour to place ON TOP of a given fill colour. */

@@ -1,3 +1,88 @@
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+index 745ef89..cca44e3 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+@@ -29,6 +29,12 @@ public class RNWidgetImageProvider extends ContentProvider {
+         if (!"r".equals(mode)) {
+             throw new FileNotFoundException("Write access denied. This provider is Read-Only.");
+         }
++        // The provider must be exported for the launcher to draw the widget
++        // images, but those images show the user's library: serve them only to
++        // the system, to this app, and to the default home app (the widget host).
++        if (!isAllowedCaller()) {
++            throw new SecurityException("Widget images are only readable by the home screen.");
++        }
+ 
+         String fileName = uri.getLastPathSegment();
+         if (fileName == null) {
+@@ -40,7 +46,7 @@ public class RNWidgetImageProvider extends ContentProvider {
+ 
+         // Verify the file exists and is actually inside our folder (Path Traversal check)
+         try {
+-            if (!file.getCanonicalPath().startsWith(folder.getCanonicalPath())) {
++            if (!file.getCanonicalPath().startsWith(folder.getCanonicalPath() + File.separator)) {
+                 throw new FileNotFoundException("Access denied: File is outside widget directory.");
+             }
+         } catch (Exception e) {
+@@ -54,6 +60,23 @@ public class RNWidgetImageProvider extends ContentProvider {
+         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+     }
+ 
++    private boolean isAllowedCaller() {
++        int uid = android.os.Binder.getCallingUid();
++        Context context = getContext();
++        if (context == null) return false;
++        if (uid == android.os.Process.myUid() || uid < android.os.Process.FIRST_APPLICATION_UID) return true;
++        android.content.pm.PackageManager pm = context.getPackageManager();
++        android.content.Intent home = new android.content.Intent(android.content.Intent.ACTION_MAIN);
++        home.addCategory(android.content.Intent.CATEGORY_HOME);
++        android.content.pm.ResolveInfo info = pm.resolveActivity(home, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
++        if (info == null || info.activityInfo == null) return false;
++        String homePkg = info.activityInfo.packageName;
++        String[] callers = pm.getPackagesForUid(uid);
++        if (callers == null) return false;
++        for (String p : callers) if (p.equals(homePkg)) return true;
++        return false;
++    }
++
+     // --- Boilerplate required for ContentProvider ---
+     @Nullable @Override
+     public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) { return null; }
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetProvider.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetProvider.java
+index 647d8f4..dd67931 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetProvider.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetProvider.java
+@@ -131,7 +131,13 @@ public class RNWidgetProvider extends AppWidgetProvider {
+ 
+     private void openUri(Context context, String uri) {
+         try {
+-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
++            // tomo: widget links are the app's own deep links - never open
++            // arbitrary targets (the PendingIntent is mutable for the host),
++            // and never let another app claim the tomo:// scheme.
++            Uri parsed = Uri.parse(uri);
++            if (parsed == null || !"tomo".equals(parsed.getScheme())) return;
++            Intent intent = new Intent(Intent.ACTION_VIEW, parsed);
++            intent.setPackage(context.getPackageName());
+             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+             context.startActivity(intent);
+         } catch (Exception e) {
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/utils/ResourceUtils.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/utils/ResourceUtils.java
+index f693e2d..8b2da37 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/utils/ResourceUtils.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/utils/ResourceUtils.java
+@@ -117,6 +117,11 @@ public class ResourceUtils {
+         } catch (IOException e) {
+             e.printStackTrace();
+         }
++        // tomo: the system families ("serif", "sans-serif-medium", ...) as in
++        // React Native's fontFamily - no need to bundle a font file for them.
++        if (fontName.equals("serif") || fontName.equals("monospace") || fontName.startsWith("sans-serif")) {
++            return Typeface.create(fontName, Typeface.NORMAL);
++        }
+         return Typeface.DEFAULT;
+     }
+ 
 diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java
 index 867f716..b617a13 100644
 --- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/oss/HeadlessJsTaskWorker.java

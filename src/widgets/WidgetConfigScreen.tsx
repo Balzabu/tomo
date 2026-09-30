@@ -19,6 +19,7 @@ import {
   WidgetContext,
 } from './widget-shared';
 import { setReadingSelection } from './widget-prefs';
+import { setRecentsHidden } from '../../modules/tomo-system';
 import { currentSize, renderWidgetFor } from './widget-task-handler';
 
 /**
@@ -40,6 +41,15 @@ export function WidgetConfigScreen({
     let alive = true;
     loadWidgetContext().then((c) => {
       if (!alive) return;
+      setRecentsHidden(!!c.lock?.hideRecents);
+      // App lock on: this screen runs outside the app (and its lock screen),
+      // so it must not list the library - whether or not the widget itself
+      // hides its contents. Place it with the default book (or the neutral
+      // "protected" card) instead.
+      if (c.lock?.enabled) {
+        void commit(c);
+        return;
+      }
       setCtx(c);
       setList(readingBooks(c.data));
     });
@@ -48,15 +58,15 @@ export function WidgetConfigScreen({
     };
   }, []);
 
-  const commit = async (bookId?: string) => {
-    if (committing.current || !ctx) return;
+  const commit = async (context: WidgetContext | null, bookId?: string) => {
+    if (committing.current || !context) return;
     committing.current = true;
     try {
       if (bookId) await setReadingSelection(widgetInfo.widgetId, bookId);
       renderWidget(
         await renderWidgetFor(
           'CurrentlyReading',
-          ctx,
+          context,
           widgetInfo.widgetId,
           // The size captured when the picker opened can be provisional.
           await currentSize('CurrentlyReading', widgetInfo.widgetId, {
@@ -122,7 +132,7 @@ export function WidgetConfigScreen({
           <Text style={{ fontSize: 40 }}>📖</Text>
           <Text style={[styles.emptyText, { color: c.textMuted }]}>{t('widget.pickEmpty')}</Text>
           <Pressable
-            onPress={() => commit()}
+            onPress={() => commit(ctx)}
             style={[styles.okBtn, { backgroundColor: c.primary }]}
           >
             <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '700' }}>{t('common.ok')}</Text>
@@ -136,7 +146,7 @@ export function WidgetConfigScreen({
             return (
               <Pressable
                 key={b.id}
-                onPress={() => commit(b.id)}
+                onPress={() => commit(ctx, b.id)}
                 style={[styles.row, { backgroundColor: c.card, borderColor: c.border }]}
               >
                 {b.coverUrl ? (

@@ -1,42 +1,53 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 import { Alert } from '@/components/AppAlert';
-import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '@/store/useSettings';
-import { radius, spacing, useTheme } from '@/theme/theme';
+import { spacing } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
-import { Button, Card } from '@/components/ui';
-import { Dialog } from '@/components/Dialog';
+import { SettingsFootnote, SettingsGroup, SettingsRow, SettingsSwitchRow } from '@/components/SettingsRow';
+import { TimePickerDialog } from '@/components/TimePickerDialog';
+import { syncReminders } from '@/lib/reminders';
 import {
-  cancelReminders,
   requestNotificationPermission,
-  scheduleDailyReminder,
 } from '@/lib/notifications';
 
 export default function RemindersSettings() {
-  const t = useTheme();
   const { t: tr } = useTranslation();
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
   const reminderMinute = useSettings((s) => s.reminderMinute);
   const setReminder = useSettings((s) => s.setReminder);
+  const reminderSmart = useSettings((s) => s.reminderSmart);
+  const setReminderSmart = useSettings((s) => s.setReminderSmart);
 
   const [timePicker, setTimePicker] = useState(false);
-  const [tmpHour, setTmpHour] = useState(reminderHour);
-  const [tmpMinute, setTmpMinute] = useState(reminderMinute);
 
   const fmtTime = (h: number, m: number) =>
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
   // The permission prompt / scheduling is async: block the switch meanwhile so
   // a second flip can't race the first.
+  // The guard is a ref (state would let two flips in one frame both through);
+  // a change made meanwhile (e.g. a new time) is applied right after.
   const [pending, setPending] = useState(false);
+  const busyRef = useRef(false);
+  const queuedRef = useRef<[boolean, number, number] | null>(null);
   const applyReminder = async (enabled: boolean, h: number, m: number) => {
-    if (pending) return;
+    if (busyRef.current) {
+      queuedRef.current = [enabled, h, m];
+      return;
+    }
+    busyRef.current = true;
     setPending(true);
     try {
-      await applyReminderInner(enabled, h, m);
+      let next: [boolean, number, number] | null = [enabled, h, m];
+      while (next) {
+        queuedRef.current = null;
+        await applyReminderInner(...next);
+        next = queuedRef.current;
+      }
     } finally {
+      busyRef.current = false;
       setPending(false);
     }
   };
@@ -48,113 +59,72 @@ export default function RemindersSettings() {
         setReminder(false, h, m);
         return;
       }
-      const scheduled = await scheduleDailyReminder(
-        h,
-        m,
-        tr('notif.title'),
-        tr('notif.body'),
-        tr('notif.channelReminders')
-      );
+      // Save first: the planner reads the settings.
+      setReminder(true, h, m);
+      const scheduled = await syncReminders();
       if (!scheduled) {
         Alert.alert(tr('settings.reminders'), tr('settings.reminderPermDenied'));
         setReminder(false, h, m);
         return;
       }
     } else {
-      await cancelReminders();
+      // Off first, so a sync already in flight sees it and cancels too.
+      setReminder(false, h, m);
+      await syncReminders();
+      return;
     }
     setReminder(enabled, h, m);
   };
 
-  const openTimePicker = () => {
-    setTmpHour(reminderHour);
-    setTmpMinute(reminderMinute);
-    setTimePicker(true);
-  };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
-      <Card style={{ gap: spacing.md }}>
-        <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('settings.reminderDesc')}</Text>
-        <View style={styles.row}>
-          <Text style={[styles.label, { color: t.colors.text }]}>{tr('settings.reminderEnable')}</Text>
-          <Switch
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.lg }}>
+      <View style={{ gap: spacing.sm }}>
+        <SettingsGroup>
+          <SettingsSwitchRow
+            first
+            icon="notifications"
+            label={tr('settings.reminderEnable')}
             value={reminderEnabled}
             disabled={pending}
-            onValueChange={(v) => void applyReminder(v, reminderHour, reminderMinute)}
-            trackColor={{ true: t.colors.primary, false: t.colors.border }}
-            thumbColor="#ffffff"
+            onChange={(v) => void applyReminder(v, reminderHour, reminderMinute)}
           />
-        </View>
-        {reminderEnabled ? (
-          <Pressable style={styles.row} onPress={openTimePicker}>
-            <Text style={[styles.label, { color: t.colors.text }]}>{tr('settings.reminderTime')}</Text>
-            <View style={[styles.timeChip, { backgroundColor: t.colors.cardAlt }]}>
-              <Ionicons name="time-outline" size={16} color={t.colors.primary} />
-              <Text style={[styles.timeChipTxt, { color: t.colors.text }]}>
-                {fmtTime(reminderHour, reminderMinute)}
-              </Text>
-            </View>
-          </Pressable>
-        ) : null}
-      </Card>
+          {reminderEnabled ? (
+            <SettingsRow icon="time" label={tr('settings.reminderTime')} value={fmtTime(reminderHour, reminderMinute)} onPress={() => setTimePicker(true)} />
+          ) : null}
+        </SettingsGroup>
+        <SettingsFootnote>{tr('settings.reminderDesc')}</SettingsFootnote>
+      </View>
 
-      <Dialog visible={timePicker} onClose={() => setTimePicker(false)} title={tr('settings.reminderTime')}>
-        <View style={styles.timeWheels}>
-          <Stepper value={tmpHour} onChange={(v) => setTmpHour((v + 24) % 24)} label={String(tmpHour).padStart(2, '0')} t={t} />
-          <Text style={[styles.timeColon, { color: t.colors.text }]}>:</Text>
-          <Stepper value={tmpMinute} onChange={(v) => setTmpMinute((v + 60) % 60)} step={5} label={String(tmpMinute).padStart(2, '0')} t={t} />
+      {reminderEnabled ? (
+        <View style={{ gap: spacing.sm }}>
+          <SettingsGroup>
+            <SettingsSwitchRow
+              first
+              icon="checkmark-done"
+              label={tr('settings.reminderSmart')}
+              value={reminderSmart}
+              onChange={(v) => {
+                setReminderSmart(v);
+                void syncReminders();
+              }}
+            />
+          </SettingsGroup>
+          <SettingsFootnote>{tr('settings.reminderSmartHint')}</SettingsFootnote>
         </View>
-        <Button
-          label={tr('common.save')}
-          full
-          onPress={() => {
-            setTimePicker(false);
-            void applyReminder(true, tmpHour, tmpMinute);
-          }}
-        />
-      </Dialog>
+      ) : null}
+
+      <TimePickerDialog
+        visible={timePicker}
+        title={tr('settings.reminderTime')}
+        hour={reminderHour}
+        minute={reminderMinute}
+        onClose={() => setTimePicker(false)}
+        onSave={(h, m) => {
+          setTimePicker(false);
+          void applyReminder(true, h, m);
+        }}
+      />
     </ScrollView>
   );
 }
-
-function Stepper({
-  value,
-  onChange,
-  label,
-  step = 1,
-  t,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  label: string;
-  step?: number;
-  t: ReturnType<typeof useTheme>;
-}) {
-  return (
-    <View style={styles.stepper}>
-      <Pressable onPress={() => onChange(value + step)} hitSlop={8}>
-        <Ionicons name="chevron-up" size={28} color={t.colors.primary} />
-      </Pressable>
-      <Text style={[styles.stepperValue, { color: t.colors.text }]}>{label}</Text>
-      <Pressable onPress={() => onChange(value - step)} hitSlop={8}>
-        <Ionicons name="chevron-down" size={28} color={t.colors.primary} />
-      </Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  muted: { fontSize: 14, lineHeight: 20 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: { fontSize: 15, fontWeight: '600' },
-  timeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill },
-  timeChipTxt: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  timeModal: { width: '100%', borderRadius: radius.lg, padding: spacing.lg, gap: spacing.lg, alignItems: 'center' },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  timeWheels: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  timeColon: { fontSize: 32, fontWeight: '800' },
-  stepper: { alignItems: 'center', gap: 4 },
-  stepperValue: { fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'], minWidth: 56, textAlign: 'center' },
-});

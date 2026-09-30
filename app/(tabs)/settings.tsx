@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { useStore } from '@/store/useStore';
 import { useSettings } from '@/store/useSettings';
 import { useActiveSession } from '@/store/useActiveSession';
+import { useLock } from '@/store/useLock';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { APP_NAME, LINKS } from '@/lib/constants';
@@ -25,6 +26,7 @@ export default function SettingsScreen() {
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
   const reminderMinute = useSettings((s) => s.reminderMinute);
+  const lockEnabled = useLock((s) => s.config.enabled);
   const c = t.colors;
 
   const go = (path: string) => router.push(path as Href);
@@ -41,7 +43,7 @@ export default function SettingsScreen() {
             // replaceAll first: it cancels any queued incremental write (so a
             // pending debounced flush can't resurrect the old dataset mid-wipe)
             // and rolls back + throws if the empty snapshot can't be written.
-            await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], version: 1 });
+            await replaceAll({ books: [], sessions: [], notes: [], shelves: [], goals: [], deleted: [], version: 1 });
           } catch {
             Alert.alert(tr('settings.clearTitle'), tr('data.saveFailed'));
             return;
@@ -60,7 +62,7 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const themeValue = scheme === 'system' ? tr('theme.auto') : tr(`theme.${scheme}`);
+  const themeValue = scheme === 'system' ? tr('theme.auto') : scheme === 'dynamic' ? tr('theme.dynamic') : tr(`theme.${scheme}`);
   const reminderValue = reminderEnabled
     ? `${String(reminderHour).padStart(2, '0')}:${String(reminderMinute).padStart(2, '0')}`
     : undefined;
@@ -90,6 +92,7 @@ export default function SettingsScreen() {
 
       <SettingsGroup title={tr('settings.groupData')}>
         <SettingsRow first icon="cloud-upload" label={tr('settings.backupImport')} onPress={() => go('/settings/data')} />
+        <SettingsRow icon="lock-closed" label={tr('lock.settingsTitle')} value={lockEnabled ? tr('lock.on') : tr('lock.off')} onPress={() => go('/settings/security')} />
         <SettingsRow icon="shield-checkmark" label={tr('settings.privacy')} onPress={() => Linking.openURL(LINKS.privacy)} />
         <SettingsRow icon="trash" label={tr('settings.clearData')} danger onPress={onClear} />
       </SettingsGroup>

@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
+  ScrollView,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,25 +11,47 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { radius, spacing, useTheme } from '@/theme/theme';
+import { radius, scrimColor, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   title?: string;
+  /** context line under the title (e.g. the book a note belongs to) */
+  subtitle?: string;
   /** fired when the dialog becomes visible (e.g. to seed form fields) */
   onShow?: () => void;
   children: React.ReactNode;
+  /** actions kept visible under the (scrollable) content */
+  footer?: React.ReactNode;
 }
 
-/** Centered modal dialog for forms. Tall content should manage its own ScrollView. */
-export function Dialog({ visible, onClose, title, onShow, children }: Props) {
+/**
+ * Centered modal dialog for forms. The body scrolls when it doesn't fit and
+ * the whole dialog moves above the keyboard (an Android Modal is a window of
+ * its own, which the activity's adjustResize doesn't reach), so the footer
+ * actions are never hidden behind it.
+ */
+export function Dialog({ visible, onClose, title, subtitle, onShow, children, footer }: Props) {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const c = t.colors;
-
+  const [keyboard, setKeyboard] = useState(0);
   useEffect(() => {
+    if (!visible) return;
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboard(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboard(0));
+    return () => {
+      show.remove();
+      hide.remove();
+      setKeyboard(0);
+    };
+  }, [visible]);
+
+  // Layout effect: the seeded fields are in place before the dialog paints
+  // (a passive effect would flash the previous values for a frame).
+  useLayoutEffect(() => {
     if (visible) onShow?.();
     // fire once per open
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -39,18 +63,33 @@ export function Dialog({ visible, onClose, title, onShow, children }: Props) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Strong scrim - independent of theme overlay so light themes dim too. */}
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable style={[styles.card, { backgroundColor: c.card }]}>
+        <Pressable style={[styles.backdrop, { backgroundColor: scrimColor(t) }, keyboard ? { paddingBottom: keyboard + spacing.md, paddingTop: spacing.xl + 24 } : null]} onPress={onClose}>
+          <Pressable style={[styles.card, { backgroundColor: c.card }, t.dark && { borderWidth: StyleSheet.hairlineWidth, borderColor: c.border }]}>
             {title ? (
               <View style={styles.head}>
-                <Text style={[styles.title, { color: c.text }]}>{title}</Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.title, { color: c.text }]}>{title}</Text>
+                  {subtitle ? (
+                    <Text style={[styles.subtitle, { color: c.textMuted }]} numberOfLines={1}>
+                      {subtitle}
+                    </Text>
+                  ) : null}
+                </View>
                 <Pressable onPress={onClose} hitSlop={8} accessibilityLabel={tr('common.close')}>
                   <Ionicons name="close" size={22} color={c.textFaint} />
                 </Pressable>
               </View>
             ) : null}
-            {children}
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.bodyContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {children}
+            </ScrollView>
+            {footer ? <View style={styles.footer}>{footer}</View> : null}
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
@@ -65,12 +104,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
-    backgroundColor: 'rgba(0,0,0,0.62)',
   },
   card: {
     width: '100%',
     maxWidth: 480,
-    maxHeight: '86%',
+    maxHeight: '100%',
     borderRadius: radius.lg,
     padding: spacing.lg,
     gap: spacing.md,
@@ -85,5 +123,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  title: { fontSize: 18, fontWeight: '800', flex: 1 },
+  title: { fontSize: 18, fontWeight: '800' },
+  subtitle: { fontSize: 13 },
+  body: { flexGrow: 0, flexShrink: 1 },
+  bodyContent: { gap: spacing.md },
+  footer: { gap: spacing.sm },
 });

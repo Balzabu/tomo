@@ -1,4 +1,4 @@
-import { FlexWidget, IconWidget, ImageWidget, OverlapWidget } from 'react-native-android-widget';
+import { FlexWidget, IconWidget, ImageWidget, OverlapWidget, TextWidget } from 'react-native-android-widget';
 import type { ImageWidgetSource } from 'react-native-android-widget';
 import { Theme } from '@/theme/theme';
 import { hx, ICON, ICON_FONT, withAlpha } from './widget-shared';
@@ -115,4 +115,38 @@ export function RoundButton({
  *  use pastel primaries (dark text reads better); light schemes saturated ones. */
 export function onPrimary(theme: Theme): string {
   return theme.dark ? theme.colors.bg : '#ffffff';
+}
+
+/** What every widget shows while the app lock hides personal contents. */
+export function PrivateWidget({ theme, t }: { theme: Theme; t: (k: string) => string }) {
+  const c = theme.colors;
+  return (
+    <FlexWidget
+      clickAction="OPEN_URI"
+      clickActionData={{ uri: 'tomo:///' }}
+      style={{
+        height: 'match_parent',
+        width: 'match_parent',
+        backgroundColor: hx(c.card),
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 12,
+      }}
+    >
+      <FlexWidget
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: withAlpha(c.primary, theme.dark ? 0.2 : 0.14),
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <IconWidget icon={'\uf3c7'} font={ICON_FONT} size={20} style={{ color: hx(c.primary) }} />
+      </FlexWidget>
+      <TextWidget text={t('widget.private')} maxLines={2} style={{ color: hx(c.textMuted), fontSize: 13, fontWeight: '600', marginTop: 8, textAlign: 'center' }} />
+    </FlexWidget>
+  );
 }

@@ -123,7 +123,12 @@ export function SessionEditor({
 
       <View style={styles.pagesRow}>
         <Field label={tr('timer.fromPage')} value={startPage} onChange={setStartPage} c={c} />
-        <Ionicons name="arrow-forward" size={18} color={c.textFaint} />
+        {/* Same height as the inputs, so the arrow sits on their centre line. */}
+        <View style={styles.arrowSlot}>
+          <View style={[styles.arrow, { backgroundColor: c.cardAlt }]}>
+            <Ionicons name="arrow-forward" size={16} color={c.textMuted} />
+          </View>
+        </View>
         <Field label={tr('timer.toPage')} value={endPage} onChange={setEndPage} c={c} />
       </View>
       {pageErr ? (
@@ -194,7 +199,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800' },
   dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dateTxt: { fontSize: 16, fontWeight: '700' },
-  pagesRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md },
+  pagesRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  arrowSlot: { height: 48, justifyContent: 'center' },
+  arrow: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 13, fontWeight: '600' },
   error: { fontSize: 12, fontWeight: '600', marginTop: -4 },
   input: { height: 48, borderRadius: radius.md, paddingHorizontal: spacing.md, fontSize: 16, fontWeight: '600' },

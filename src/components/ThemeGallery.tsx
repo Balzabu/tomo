@@ -1,11 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  dynamicTheme,
   radius,
   SCHEME_LIST,
   SCHEMES,
   SchemeChoice,
   spacing,
+  useDynamicPalettes,
   useTheme,
 } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -20,6 +22,8 @@ interface Props {
 export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const palettes = useDynamicPalettes((s) => s.palettes);
+  const dyn = palettes ? { light: dynamicTheme(palettes, false).colors, dark: dynamicTheme(palettes, true).colors } : null;
 
   return (
     <View style={styles.grid}>
@@ -53,6 +57,45 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
           ) : null}
         </View>
       </Pressable>
+
+      {/* Material You: wallpaper colours, light/dark following the system */}
+      {dyn ? (
+        <Pressable
+          onPress={() => onPick('dynamic')}
+          style={[
+            styles.card,
+            styles.autoCard,
+            {
+              borderColor: choice === 'dynamic' ? t.colors.primary : t.colors.border,
+              borderWidth: choice === 'dynamic' ? 2 : StyleSheet.hairlineWidth,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: choice === 'dynamic' }}
+        >
+          <View style={StyleSheet.absoluteFill}>
+            <View style={{ flex: 1, flexDirection: 'row' }}>
+              <View style={{ flex: 1, backgroundColor: dyn.dark.bg, padding: spacing.md, gap: 5 }}>
+                <View style={[styles.bar, { width: 24, backgroundColor: dyn.dark.primary }]} />
+                <View style={[styles.dot, { backgroundColor: dyn.dark.accent }]} />
+              </View>
+              <View style={{ flex: 1, backgroundColor: dyn.light.bg, padding: spacing.md, gap: 5 }}>
+                <View style={[styles.bar, { width: 24, backgroundColor: dyn.light.primary }]} />
+                <View style={[styles.dot, { backgroundColor: dyn.light.accent }]} />
+              </View>
+            </View>
+          </View>
+          <View style={styles.autoIcon}>
+            <Ionicons name="color-palette" size={22} color={dyn.dark.primary} />
+          </View>
+          <View style={styles.cardFooterAbs}>
+            <Text style={[styles.name, { color: '#fff' }]} numberOfLines={1}>
+              {tr('theme.dynamic')}
+            </Text>
+            {choice === 'dynamic' ? <Ionicons name="checkmark-circle" size={18} color="#fff" /> : null}
+          </View>
+        </Pressable>
+      ) : null}
 
       {SCHEME_LIST.map((id) => {
         const c = SCHEMES[id].colors;

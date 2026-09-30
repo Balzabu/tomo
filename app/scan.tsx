@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { lookupByIsbn } from '@/services/bookApi';
 import { findExistingBook, useStore } from '@/store/useStore';
+import { useLock, withLockGrace } from '@/store/useLock';
 import { isbnKey, normalizeIsbn } from '@/lib/isbn';
 import { BookSearchResult } from '@/types';
 import { spacing, useTheme } from '@/theme/theme';
@@ -20,6 +21,8 @@ export default function ScanScreen() {
   const { t: tr } = useTranslation();
   const [permission, requestPermission] = useCameraPermissions();
   const addBook = useStore((s) => s.addBook);
+  // No camera behind the lock screen.
+  const locked = useLock((s) => s.locked);
   const [phase, setPhase] = useState<Phase>('scanning');
   const [lastIsbn, setLastIsbn] = useState<string | null>(null);
   // Set when the scanned book is already in the library: the existing book to
@@ -35,7 +38,7 @@ export default function ScanScreen() {
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
-  const cameraActive = phase === 'scanning';
+  const cameraActive = !locked && (phase === 'scanning');
 
   const handleIsbn = async (isbn: string) => {
     // The scanned code may already be in the library - no network needed to
@@ -109,7 +112,7 @@ export default function ScanScreen() {
         <Text style={[styles.permSub, { color: t.colors.textMuted }]}>
           {tr('scan.permSub')}
         </Text>
-        <Button label={tr('scan.allow')} icon="camera" onPress={requestPermission} />
+        <Button label={tr('scan.allow')} icon="camera" onPress={() => void withLockGrace(requestPermission)} />
         <Button label={tr('scan.manual')} variant="ghost" onPress={() => router.replace('/add-manual')} />
       </View>
     );

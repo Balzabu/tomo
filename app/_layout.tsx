@@ -14,13 +14,19 @@ import * as SystemUI from 'expo-system-ui';
 import { useStore } from '@/store/useStore';
 import { useActiveSession } from '@/store/useActiveSession';
 import { useSettings } from '@/store/useSettings';
-import { useTheme } from '@/theme/theme';
+import { followsSystem, useDynamicPalettes, useTheme } from '@/theme/theme';
+import { useLock } from '@/store/useLock';
+import { AppLockGate } from '@/components/AppLockGate';
+import { SharedFileHandler } from '@/components/SharedFileHandler';
+import { LinkResumer } from '@/components/LinkResumer';
+import { useBackup, watchAutoBackup } from '@/lib/autoBackup';
 import { useTranslation } from '@/i18n';
 import { loadGoogleApiKey } from '@/lib/prefs';
 import { didReadFail } from '@/lib/storage';
 import { migrateLegacyKeys } from '@/lib/migrate';
 import { setGoogleApiKey } from '@/services/bookApi';
-import { scheduleDailyReminder, hasNotificationPermission } from '@/lib/notifications';
+import { hasNotificationPermission } from '@/lib/notifications';
+import { syncReminders, watchReminders } from '@/lib/reminders';
 import { reconcileCovers } from '@/lib/covers';
 import { refreshWidgets } from '@/widgets/refresh';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -44,6 +50,8 @@ export default function RootLayout() {
   const sessionHydrated = useActiveSession((s) => s.hydrated);
   const hydrateSettings = useSettings((s) => s.hydrate);
   const settingsHydrated = useSettings((s) => s.hydrated);
+  const hydrateLock = useLock((s) => s.hydrate);
+  const lockHydrated = useLock((s) => s.hydrated);
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
   const reminderMinute = useSettings((s) => s.reminderMinute);
@@ -55,29 +63,28 @@ export default function RootLayout() {
       void hydrate();
       void hydrateSettings();
       void hydrateActiveSession();
+      void hydrateLock();
+      void useBackup.getState().hydrate();
       void loadGoogleApiKey().then(setGoogleApiKey);
     })();
-  }, [hydrate, hydrateSettings, hydrateActiveSession]);
+  }, [hydrate, hydrateSettings, hydrateActiveSession, hydrateLock]);
 
-  // Re-arm the daily reading reminder on launch (survives reboots / locale
-  // change). If notification permission was revoked in the meantime, reflect
-  // that in the setting instead of "scheduling" a reminder that can never fire.
+  // Re-plan the reading reminders on launch (survives reboots / locale
+  // change, and drops today's if you've already read). If notification
+  // permission was revoked in the meantime, reflect that in the setting
+  // instead of "scheduling" a reminder that can never fire.
+  const reminderSmart = useSettings((s) => s.reminderSmart);
   useEffect(() => {
-    if (!settingsHydrated || !reminderEnabled) return;
+    if (!settingsHydrated || !hydrated || !reminderEnabled) return;
     void (async () => {
       if (!(await hasNotificationPermission())) {
         useSettings.getState().setReminder(false, reminderHour, reminderMinute);
         return;
       }
-      await scheduleDailyReminder(
-        reminderHour,
-        reminderMinute,
-        tr('notif.title'),
-        tr('notif.body'),
-        tr('notif.channelReminders')
-      );
+      await syncReminders();
+      watchReminders();
     })();
-  }, [settingsHydrated, reminderEnabled, reminderHour, reminderMinute, tr]);
+  }, [settingsHydrated, hydrated, reminderEnabled, reminderHour, reminderMinute, reminderSmart, tr]);
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.colors.bg);
@@ -88,10 +95,22 @@ export default function RootLayout() {
   // keep the wrong palette until the next data mutation or 30-minute update.
   useEffect(() => {
     const sub = Appearance.addChangeListener(() => {
-      if (useSettings.getState().scheme === 'system') void refreshWidgets();
+      if (followsSystem(useSettings.getState().scheme)) void refreshWidgets();
     });
-    return () => sub.remove();
+    // A new wallpaper changes the Material You palette the widgets use too.
+    const unsub = useDynamicPalettes.subscribe(() => {
+      if (useSettings.getState().scheme === 'dynamic') void refreshWidgets();
+    });
+    return () => {
+      sub.remove();
+      unsub();
+    };
   }, []);
+
+  // Automatic backups start once the library is loaded.
+  useEffect(() => {
+    if (hydrated) watchAutoBackup();
+  }, [hydrated]);
 
   // Once data is loaded, reclaim cover files orphaned by a force-quit during a
   // delete-undo window. Runs once per launch, best-effort.
@@ -127,7 +146,7 @@ export default function RootLayout() {
         <ThemeProvider value={navTheme}>
           <StatusBar style={t.dark ? 'light' : 'dark'} />
           <ErrorBoundary>
-          {!hydrated || !settingsHydrated || !sessionHydrated ? (
+          {!hydrated || !settingsHydrated || !sessionHydrated || !lockHydrated ? (
             <View
               style={{
                 flex: 1,
@@ -156,18 +175,25 @@ export default function RootLayout() {
               <Stack.Screen name="book/edit/[id]" options={{ title: tr('editBook.title'), presentation: 'modal' }} />
               <Stack.Screen name="timer/[bookId]" options={{ title: tr('timer.title'), presentation: 'fullScreenModal' }} />
               <Stack.Screen name="wrapped" options={{ title: tr('stats.yearInReview') }} />
+              <Stack.Screen name="notes" options={{ title: tr('notes.title') }} />
               <Stack.Screen name="settings/appearance" options={{ title: tr('settings.theme') }} />
               <Stack.Screen name="settings/language" options={{ title: tr('settings.language') }} />
               <Stack.Screen name="settings/reminders" options={{ title: tr('settings.reminders') }} />
               <Stack.Screen name="settings/shelves" options={{ title: tr('settings.shelves') }} />
               <Stack.Screen name="settings/book-search" options={{ title: tr('settings.bookSearch') }} />
               <Stack.Screen name="settings/data" options={{ title: tr('settings.backupImport') }} />
+              <Stack.Screen name="settings/security" options={{ title: tr('lock.settingsTitle') }} />
             </Stack>
           )}
           <Snackbar />
           <AlertHost />
-          {hydrated && settingsHydrated && sessionHydrated ? <ActiveSessionWatcher /> : null}
+          {hydrated && settingsHydrated && sessionHydrated && lockHydrated ? <ActiveSessionWatcher /> : null}
+          {hydrated && settingsHydrated && lockHydrated ? <SharedFileHandler /> : null}
+          {hydrated && settingsHydrated && sessionHydrated && lockHydrated ? <LinkResumer /> : null}
           </ErrorBoundary>
+          {/* Outside the error boundary: a crash elsewhere must not take the
+              lock screen down with it (or show data in the error page). */}
+          {lockHydrated ? <AppLockGate /> : null}
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

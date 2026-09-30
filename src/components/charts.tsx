@@ -73,7 +73,8 @@ export function BarChart({
   height = 120,
   color,
 }: {
-  data: { label: string; value: number; sub?: string }[];
+  /** `display` replaces the number above the bar; `highlight` tints it */
+  data: { label: string; value: number; sub?: string; display?: string; highlight?: boolean }[];
   height?: number;
   color?: string;
 }) {
@@ -87,13 +88,13 @@ export function BarChart({
           return (
             <View key={i} style={styles.barCol}>
               <Text style={[styles.barValue, { color: t.colors.textMuted }]}>
-                {d.value > 0 ? d.value : ''}
+                {d.value > 0 ? d.display ?? d.value : ''}
               </Text>
               <View
                 style={{
                   width: '70%',
                   height: Math.max(d.value > 0 ? 4 : 0, h),
-                  backgroundColor: color ?? t.colors.primary,
+                  backgroundColor: d.highlight ? t.colors.accent : color ?? t.colors.primary,
                   borderRadius: radius.sm,
                 }}
               />
@@ -110,6 +111,52 @@ export function BarChart({
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+/** Horizontal bars: label on the left, proportional bar, value on the right. */
+export function HBarList({
+  rows,
+  color,
+}: {
+  rows: { key: string; label: React.ReactNode; value: number; display: string; sub?: string }[];
+  color?: string;
+}) {
+  const t = useTheme();
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {rows.map((r) => (
+        <View key={r.key} style={styles.hRow}>
+          <View style={styles.hLabel}>
+            {typeof r.label === 'string' ? (
+              <Text style={[styles.hLabelTxt, { color: t.colors.text }]} numberOfLines={1}>
+                {r.label}
+              </Text>
+            ) : (
+              r.label
+            )}
+            {r.sub ? (
+              <Text style={[styles.hSub, { color: t.colors.textFaint }]} numberOfLines={1}>
+                {r.sub}
+              </Text>
+            ) : null}
+          </View>
+          <View style={[styles.hTrack, { backgroundColor: t.colors.cardAlt }]}>
+            <View
+              style={{
+                width: `${(r.value / max) * 100}%`,
+                minWidth: r.value > 0 ? 6 : 0,
+                height: '100%',
+                borderRadius: radius.pill,
+                backgroundColor: color ?? t.colors.primary,
+              }}
+            />
+          </View>
+          <Text style={[styles.hValue, { color: t.colors.textMuted }]}>{r.display}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -150,6 +197,12 @@ function withAlpha(hex: string, alpha: number): string {
 
 const styles = StyleSheet.create({
   barRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  hRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  hLabel: { width: '34%' },
+  hLabelTxt: { fontSize: 13, fontWeight: '600' },
+  hSub: { fontSize: 11 },
+  hTrack: { flex: 1, height: 10, borderRadius: radius.pill, overflow: 'hidden' },
+  hValue: { fontSize: 12, fontWeight: '700', minWidth: 34, textAlign: 'right' },
   barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   barValue: { fontSize: 10, marginBottom: 2 },
   barLabel: { fontSize: 10, marginTop: 4 },

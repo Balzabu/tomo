@@ -54,6 +54,18 @@ export async function setReadingSelection(widgetId: number, bookId: string): Pro
   });
 }
 
+/** Step a widget to the book after its current one - read and write in one
+ *  queued step, so two quick taps advance twice. */
+export async function cycleReadingSelection(widgetId: number, ids: string[]): Promise<void> {
+  if (ids.length < 2) return;
+  await enqueue(async () => {
+    const map = await readMap();
+    const cur = Math.max(0, ids.indexOf(map[String(widgetId)] ?? ''));
+    map[String(widgetId)] = ids[(cur + 1) % ids.length];
+    await writeMap(map);
+  });
+}
+
 /** Drop the selection of a removed widget instance so the map doesn't grow forever. */
 export async function removeReadingSelection(widgetId: number): Promise<void> {
   await enqueue(async () => {
@@ -70,6 +82,49 @@ export async function clearReadingSelections(): Promise<void> {
   await enqueue(async () => {
     try {
       await AsyncStorage.removeItem(READING_SEL_KEY);
+    } catch {
+      // best-effort
+    }
+  });
+}
+
+// "Next quote" taps per Quote widget instance, keyed by widgetId.
+const QUOTE_OFFSET_KEY = 'tomo:widget:quote-offset:v1';
+
+async function readOffsets(): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(QUOTE_OFFSET_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function getQuoteOffset(widgetId: number): Promise<number> {
+  const map = await readOffsets();
+  const v = map[String(widgetId)];
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+export async function bumpQuoteOffset(widgetId: number): Promise<void> {
+  await enqueue(async () => {
+    const map = await readOffsets();
+    map[String(widgetId)] = ((map[String(widgetId)] as number) || 0) + 1;
+    try {
+      await AsyncStorage.setItem(QUOTE_OFFSET_KEY, JSON.stringify(map));
+    } catch {
+      // best-effort
+    }
+  });
+}
+
+export async function removeQuoteOffset(widgetId: number): Promise<void> {
+  await enqueue(async () => {
+    const map = await readOffsets();
+    if (!(String(widgetId) in map)) return;
+    delete map[String(widgetId)];
+    try {
+      await AsyncStorage.setItem(QUOTE_OFFSET_KEY, JSON.stringify(map));
     } catch {
       // best-effort
     }

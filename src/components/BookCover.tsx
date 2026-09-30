@@ -40,6 +40,25 @@ export function BookCover({ uri, title, width, height }: Props) {
     );
   }
 
+  // Thumbnails are too small for a readable title: show its initial instead.
+  if (width < 56) {
+    const initial = (title ?? '').trim().charAt(0).toUpperCase();
+    return (
+      <View
+        style={[
+          styles.placeholder,
+          { width, height: h, backgroundColor: t.colors.cardAlt, borderColor: t.colors.border, padding: 0 },
+        ]}
+      >
+        {initial ? (
+          <Text style={{ color: t.colors.primary, fontSize: Math.round(width * 0.5), fontWeight: '800' }}>{initial}</Text>
+        ) : (
+          <Ionicons name="book" size={width / 2.4} color={t.colors.textFaint} />
+        )}
+      </View>
+    );
+  }
+
   return (
     <View
       style={[

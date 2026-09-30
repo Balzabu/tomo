@@ -12,7 +12,7 @@ import { TextInput } from '@/components/ThemedTextInput';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useBook, useStore } from '@/store/useStore';
+import { persistNow, useBook, useStore } from '@/store/useStore';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
@@ -101,6 +101,10 @@ export default function EditBookScreen() {
   // One-shot guard: a second quick tap on Save would fire router.back() twice
   // and pop the book-detail screen under this modal too.
   const savedRef = useRef(false);
+  // The book as the form opened it. Save writes only what the user changed:
+  // fields filled in meanwhile (e.g. the background catalogue fill after an
+  // import) must not be overwritten with the stale values shown here.
+  const initialRef = useRef(book);
 
   if (!book) {
     return (
@@ -124,8 +128,8 @@ export default function EditBookScreen() {
     // An empty field clears the page count on purpose; garbled input ("abc")
     // keeps the existing value instead of silently erasing it.
     const pageCount = pages.trim() === '' ? undefined : Number.isFinite(pc) && pc > 0 ? pc : book.pageCount;
-    updateBook(book.id, {
-      ...catalogExtra,
+    const init = initialRef.current ?? book;
+    const form: Partial<typeof book> = {
       isbn: isbn.trim() || undefined,
       title: title.trim(),
       authors: author.trim() ? author.split(',').map((a) => a.trim()).filter(Boolean) : [],
@@ -135,7 +139,24 @@ export default function EditBookScreen() {
       seriesNumber: Number.isFinite(sn) && sn >= 0 ? sn : undefined,
       pace,
       moods: moods.length ? moods : undefined,
-    });
+    };
+    const was: Partial<typeof book> = {
+      isbn: init.isbn,
+      title: init.title,
+      authors: init.authors ?? [],
+      pageCount: init.pageCount,
+      coverUrl: init.coverUrl,
+      series: init.series,
+      seriesNumber: init.seriesNumber,
+      pace: init.pace,
+      moods: init.moods?.length ? init.moods : undefined,
+    };
+    const changed: Partial<typeof book> = { ...catalogExtra };
+    for (const k of Object.keys(form) as (keyof typeof form)[]) {
+      if (JSON.stringify(form[k]) !== JSON.stringify(was[k])) (changed as Record<string, unknown>)[k] = form[k];
+    }
+    const replacedCover = 'coverUrl' in changed ? book.coverUrl : undefined;
+    if (Object.keys(changed).length) updateBook(book.id, changed);
     // Reading dates: only write when something actually changed, and keep the
     // original time-of-day when the day is unchanged.
     const keep = (orig: number | undefined, text: string): number | null =>
@@ -157,8 +178,15 @@ export default function EditBookScreen() {
     ) {
       setReadDates(book.id, { startedAt: nextStarted, finishedAt: nextFinished, reads: nextReads });
     }
-    // The cover was replaced/removed → delete the now-unreferenced local file.
-    if (coverUrl !== book.coverUrl) void deleteCoverFile(book.coverUrl);
+    // The cover was replaced/removed → delete the now-unreferenced local file,
+    // once the saved book no longer points at it (a kill in between would
+    // otherwise leave it pointing at a deleted file).
+    if (replacedCover && replacedCover !== coverUrl) {
+      const old = replacedCover;
+      void persistNow().then((ok) => {
+        if (ok) void deleteCoverFile(old);
+      });
+    }
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   };

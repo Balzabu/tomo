@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { uid } from '@/lib/utils';
+import { withLockGrace } from '@/store/useLock';
 
 // Locally-stored custom covers live here so they survive app restarts.
 const COVERS_DIR = `${FileSystem.documentDirectory}covers/`;
@@ -10,8 +11,21 @@ export type PickResult =
   | { status: 'ok'; uri: string }
   | { status: 'canceled' };
 
+/** A cover file this app wrote: directly inside the covers folder, a plain
+ *  file name (no "..", no sub-path). Anything else - e.g. a crafted backup
+ *  pointing at "covers/../../databases/…" - is never read or deleted. */
 export function isLocalCover(uri?: string): boolean {
-  return !!uri && uri.startsWith(COVERS_DIR);
+  if (!uri || !uri.startsWith(COVERS_DIR)) return false;
+  return /^[A-Za-z0-9_-]+\.(jpg|jpeg|png)$/.test(uri.slice(COVERS_DIR.length));
+}
+
+/** A cover URL safe to keep from outside data (backups, imports): https
+ *  (http upgraded - release builds block cleartext) or one of our files. */
+export function safeCoverUrl(uri: unknown): string | undefined {
+  if (typeof uri !== 'string') return undefined;
+  if (/^https:\/\//i.test(uri)) return uri;
+  if (/^http:\/\//i.test(uri)) return `https://${uri.slice(7)}`;
+  return isLocalCover(uri) ? uri : undefined;
 }
 
 /** Read a local cover file as base64 (for embedding in a backup). */
@@ -48,12 +62,12 @@ export async function pickCover(): Promise<PickResult> {
   // needs no media permission. Requesting one here actually *broke* the picker
   // on Android < 13, where the request includes WRITE_EXTERNAL_STORAGE - a
   // permission this app strips from its manifest, so it was always denied.
-  const res = await ImagePicker.launchImageLibraryAsync({
+  const res = await withLockGrace(() => ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [2, 3],
     quality: 0.85,
-  });
+  }));
   if (res.canceled || !res.assets?.[0]) return { status: 'canceled' };
 
   await ensureDir();

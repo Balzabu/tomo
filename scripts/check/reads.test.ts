@@ -41,3 +41,29 @@ assert.deepEqual(s2, { reads: [{ startedAt: 1, finishedAt: 2 }], startedAt: 9 })
 assert.deepEqual(splitDateRanges([]), { reads: undefined, startedAt: undefined, finishedAt: undefined });
 assert.deepEqual(splitDateRanges([{ end: 4 }]), { reads: undefined, startedAt: undefined, finishedAt: 4 });
 console.log('reads: all assertions passed');
+
+// ---- reread of a book whose earlier reads are undated ----
+import { finishFields } from '../../src/lib/reads.ts';
+{
+  const now = new Date(2026, 8, 30, 12).getTime();
+  const finish = (b: any) => ({ ...b, status: 'finished', currentPage: b.pageCount, ...finishFields(b, now) });
+  // Goodreads "read" with no date (readCount 1), and "Read Count 2" with one date
+  const undated: any = { id: 'a', title: 'A', authors: [], status: 'finished', currentPage: 100, pageCount: 100, readCount: 1, shelfIds: [], addedAt: 1, source: 'import' };
+  const twice: any = { ...undated, id: 'b', readCount: 2, finishedAt: new Date(2020, 1, 1).getTime() };
+  for (const [b0, count] of [[undated, 2], [twice, 3]] as const) {
+    const rr = withRereadStarted(b0, now - 10 * 86_400_000);
+    assert.equal(rr.rereading, true);
+    const done = finish(rr);
+    assert.equal(done.finishedAt, now, 'the reread finish is recorded');
+    assert.equal(readCountOf(done), count);
+    assert.equal(countFinishesInYear([done], 2026), 1);
+    assert.equal('rereading' in done && done.rereading !== undefined, false, 'marker cleared on finish');
+    // re-saving the last page afterwards is not another read
+    assert.deepEqual(finishFields(done, now + 1000), { finishedAt: now });
+  }
+  // without a reread, an undated "read" still gets no invented date or extra count
+  assert.deepEqual(finishFields({ ...undated, status: 'reading' }, now), { finishedAt: undefined });
+  // a first finish still counts once
+  assert.deepEqual(finishFields({ ...undated, status: 'reading', readCount: undefined }, now), { finishedAt: now, readCount: 1 });
+}
+console.log('reads (reread marker): all assertions passed');

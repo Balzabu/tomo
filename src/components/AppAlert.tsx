@@ -1,7 +1,8 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { create } from 'zustand';
-import { radius, spacing, useTheme } from '@/theme/theme';
+import { radius, scrimColor, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
+import { useLock } from '@/store/useLock';
 
 // Android's native dialogs follow the system light/dark mode and paint their
 // buttons in the platform accent, whatever theme the app is in. This is a
@@ -49,7 +50,10 @@ export function AlertHost() {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const current = useAlerts((s) => s.queue[0]);
-  if (!current) return null;
+  // Nothing may show above the lock screen; queued alerts wait for unlock.
+  const locked = useLock((s) => s.locked);
+  const lockReady = useLock((s) => s.hydrated);
+  if (!current || locked || !lockReady) return null;
 
   const buttons = current.buttons?.length ? current.buttons : [{ text: tr('common.ok') }];
   const press = (b: AlertButton) => {
@@ -66,9 +70,13 @@ export function AlertHost() {
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={dismiss} statusBarTranslucent>
-      <Pressable style={styles.backdrop} onPress={dismiss}>
+      <Pressable style={[styles.backdrop, { backgroundColor: scrimColor(t) }]} onPress={dismiss}>
         <Pressable
-          style={[styles.card, { backgroundColor: t.colors.card }]}
+          style={[
+            styles.card,
+            { backgroundColor: t.colors.card },
+            t.dark && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border },
+          ]}
           accessibilityRole="alert"
           accessibilityLabel={current.message ? `${current.title}\n${current.message}` : current.title}
         >
@@ -104,7 +112,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
-    backgroundColor: 'rgba(0,0,0,0.62)',
   },
   card: {
     width: '100%',

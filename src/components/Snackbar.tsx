@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useSnackbar } from '@/store/useSnackbar';
+import { useLock } from '@/store/useLock';
 
 /** Global snackbar with an optional action (e.g. "Undo"). Mounted once in the
  *  root layout. */
@@ -14,14 +15,17 @@ export function Snackbar() {
   const actionLabel = useSnackbar((s) => s.actionLabel);
   const act = useSnackbar((s) => s.act);
   const dismiss = useSnackbar((s) => s.dismiss);
+  const locked = useLock((s) => s.locked);
 
   // Keyed on `key`, not just the text: two identical messages in a row (e.g.
   // deleting two books) must each get their full timeout / undo window.
+  // Behind the lock screen the clock stops: an Undo must not run out unseen,
+  // so it gets its full window again once unlocked.
   useEffect(() => {
-    if (!message) return;
+    if (!message || locked) return;
     const id = setTimeout(dismiss, 4000);
     return () => clearTimeout(id);
-  }, [message, key, dismiss]);
+  }, [message, key, dismiss, locked]);
 
   if (!message) return null;
 

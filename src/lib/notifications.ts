@@ -1,10 +1,12 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { withLockGrace } from '@/store/useLock';
 
 const CHANNEL_ID = 'reading-reminders';
 const SESSION_CHANNEL_ID = 'reading-session';
 const SESSION_CATEGORY_ID = 'reading-session';
 const FINISH_ACTION_ID = 'FINISH';
+export const QUOTE_ACTION_ID = 'QUOTE';
 
 // Show reminders even when the app is in the foreground. The ongoing session
 // notification stays in the shade but doesn't pop a banner over the timer.
@@ -38,7 +40,7 @@ export async function requestNotificationPermission(channelName: string): Promis
     await ensureAndroidChannel(channelName);
     const current = await Notifications.getPermissionsAsync();
     if (current.granted) return true;
-    const req = await Notifications.requestPermissionsAsync();
+    const req = await withLockGrace(() => Notifications.requestPermissionsAsync());
     return req.granted;
   } catch {
     return false;
@@ -55,42 +57,79 @@ export async function hasNotificationPermission(): Promise<boolean> {
   }
 }
 
+const REMINDER_PREFIX = 'reminder-';
+
+export interface ReminderItem {
+  /** local day key, used in the notification id */
+  day: string;
+  date: Date;
+  title: string;
+  body: string;
+}
+
 /**
- * Replace any existing daily reminder with one at the given local time.
- * Returns whether it was scheduled (false if the platform call threw), so the
- * caller can reconcile the "reminder on" setting instead of silently failing.
+ * Replace the scheduled reminders. `items` = one-off reminders for specific
+ * days (the "skip days you've read" mode, re-planned whenever the app runs);
+ * `daily` = a single repeating reminder. Returns whether scheduling worked, so
+ * the caller can reconcile the "reminder on" setting instead of silently
+ * failing.
  */
-export async function scheduleDailyReminder(
-  hour: number,
-  minute: number,
-  title: string,
-  body: string,
+export async function scheduleReminders(
+  plan: { items: ReminderItem[] } | { daily: { hour: number; minute: number; title: string; body: string } },
   channelName: string
 ): Promise<boolean> {
   try {
     await ensureAndroidChannel(channelName);
     await cancelReminders();
-    await Notifications.scheduleNotificationAsync({
-      content: { title, body },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour,
-        minute,
-        channelId: CHANNEL_ID,
-      },
-    });
+    if ('daily' in plan) {
+      const { hour, minute, title, body } = plan.daily;
+      await Notifications.scheduleNotificationAsync({
+        identifier: `${REMINDER_PREFIX}daily`,
+        content: { title, body },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute,
+          channelId: CHANNEL_ID,
+        },
+      });
+      return true;
+    }
+    for (const it of plan.items) {
+      await Notifications.scheduleNotificationAsync({
+        identifier: `${REMINDER_PREFIX}${it.day}`,
+        content: { title: it.title, body: it.body },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: it.date, channelId: CHANNEL_ID },
+      });
+    }
     return true;
   } catch {
     return false;
   }
 }
 
-/** Cancel the reading reminder (we only ever schedule this one). */
+/** Cancel the reading reminders (never anything else we may schedule). */
 export async function cancelReminders(): Promise<void> {
   try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      all
+        .filter((n) => n.identifier.startsWith(REMINDER_PREFIX) || !n.identifier.startsWith('session-'))
+        .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+    );
   } catch {
     // ignore
+  }
+}
+
+/** Upcoming reminder ids (for diagnostics / tests). */
+export async function scheduledReminderIds(): Promise<string[]> {
+  try {
+    return (await Notifications.getAllScheduledNotificationsAsync())
+      .map((n) => n.identifier)
+      .filter((id) => id.startsWith(REMINDER_PREFIX));
+  } catch {
+    return [];
   }
 }
 
@@ -110,6 +149,8 @@ export interface SessionNotificationText {
   body: string;
   /** label of the "Finish" action button */
   finishLabel: string;
+  /** label of the "Add quote" action button */
+  quoteLabel: string;
   /** name of the Android notification channel (visible in system settings) */
   channelName: string;
 }
@@ -127,6 +168,11 @@ export async function showSessionNotification(
   try {
     await ensureSessionChannel(text.channelName);
     await Notifications.setNotificationCategoryAsync(SESSION_CATEGORY_ID, [
+      {
+        identifier: QUOTE_ACTION_ID,
+        buttonTitle: text.quoteLabel,
+        options: { opensAppToForeground: true },
+      },
       {
         identifier: FINISH_ACTION_ID,
         buttonTitle: text.finishLabel,

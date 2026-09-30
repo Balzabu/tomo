@@ -25,6 +25,8 @@ export interface CurrentlyReadingData {
   totalSeconds: number;
   streak: number;
   coverImage?: ImageWidgetSource;
+  /** reading plan: today's quota line ("12 pag. per oggi" / done) */
+  plan?: { text: string; done: boolean };
 }
 
 interface Props {
@@ -232,7 +234,7 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
             <ProgressBar theme={theme} pct={pct} />
           </FlexWidget>
           <TextWidget
-            text={`${pct}% · ${pageText}`}
+            text={book.plan ? `${pct}% · ${book.plan.text}` : `${pct}% · ${pageText}`}
             maxLines={1}
             style={{ color: hx(c.textMuted), fontSize: 11, fontWeight: '600', marginTop: 5 }}
           />
@@ -294,6 +296,7 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
           <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             {stat(ICON.time, timeText, c.textMuted)}
             {book.streak > 0 ? stat(ICON.flame, String(book.streak), c.star) : null}
+            {book.plan ? stat(ICON.flag, book.plan.text, book.plan.done ? c.success : c.primary) : null}
           </FlexWidget>
         </FlexWidget>
       </FlexWidget>

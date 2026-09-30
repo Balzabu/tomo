@@ -16,13 +16,15 @@ interface Props {
   title?: string;
   author?: string;
   page?: number;
+  /** the book's cover, shown next to the attribution */
+  coverUrl?: string;
   onClose: () => void;
 }
 
 const QUOTE_STYLES: ShareStyle[] = ['minimal', 'gradient', 'paper'];
 const CARD_W = 300;
 
-export function QuoteShareModal({ visible, quote, title, author, page, onClose }: Props) {
+export function QuoteShareModal({ visible, quote, title, author, page, coverUrl, onClose }: Props) {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const cardRef = useRef<View>(null);
@@ -33,7 +35,7 @@ export function QuoteShareModal({ visible, quote, title, author, page, onClose }
   const shareAsImage = async () => {
     if (busy) return;
     setBusy(true);
-    const res = await shareViewAsImage(cardRef);
+    const res = await shareViewAsImage(cardRef, { preloadUrls: [coverUrl] });
     setBusy(false);
     if (res === 'failed') Alert.alert(tr('share.failedTitle'), tr('share.failedMsg'));
     else if (res === 'unavailable') Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
@@ -69,11 +71,13 @@ export function QuoteShareModal({ visible, quote, title, author, page, onClose }
           width={CARD_W}
           content={{
             kind: 'quote',
+            kicker: tr('share.kicker.quote'),
             quote: quote ?? '',
             title,
             author,
             page,
             pageAbbr: tr('common.pageAbbr'),
+            coverUrl,
           }}
         />
       </ScrollView>

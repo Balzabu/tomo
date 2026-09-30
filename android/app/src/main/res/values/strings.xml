@@ -7,4 +7,5 @@
   <string name="widget_quickstart_description" translatable="false">Start a reading session by picking a book</string>
   <string name="widget_streakgoal_description" translatable="false">Your day streak and today\'s goal</string>
   <string name="widget_heatmap_description" translatable="false">Your reading calendar</string>
+  <string name="widget_quote_description" translatable="false">A quote you saved, a different one every day</string>
 </resources>

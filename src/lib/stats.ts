@@ -1,4 +1,4 @@
-import { Book, Goal, ReadingSession } from '@/types';
+import { Book, ReadingSession } from '@/types';
 import { toDateKey, dateKeyToDate } from '@/lib/utils';
 import { booksFinishedInYear, countFinishesInYear, finishesOf } from '@/lib/reads';
 
@@ -82,6 +82,25 @@ export function pagesByDay(sessions: ReadingSession[]): Map<string, number> {
   return map;
 }
 
+export interface DailyTotals {
+  /** seconds read per date key */
+  seconds: Map<string, number>;
+  /** pages read per date key */
+  pages: Map<string, number>;
+}
+
+/** sessionsByDay + pagesByDay in one pass, computed once per sessions change
+ *  and shared by the heatmap and the weekly chart. */
+export function dailyTotals(sessions: ReadingSession[]): DailyTotals {
+  const seconds = new Map<string, number>();
+  const pages = new Map<string, number>();
+  for (const s of sessions) {
+    seconds.set(s.date, (seconds.get(s.date) ?? 0) + s.durationSeconds);
+    pages.set(s.date, (pages.get(s.date) ?? 0) + (s.pagesRead || 0));
+  }
+  return { seconds, pages };
+}
+
 function computeStreaks(sessions: ReadingSession[]): {
   current: number;
   longest: number;
@@ -132,14 +151,14 @@ export interface HeatCell {
 
 /** Last `weeks` weeks of activity, aligned to week columns (Mon-first). */
 export function buildHeatmap(
-  sessions: ReadingSession[],
+  daily: DailyTotals,
   weeks = 17
 ): { cells: HeatCell[]; cols: number } {
-  const byDay = sessionsByDay(sessions);
+  const byDay = daily.seconds;
   // Pages logged without a timer (0-second "update progress" sessions) count
   // as activity too, at the lowest level - otherwise the streak lights up
   // next to a blank heatmap cell.
-  const pagesDay = pagesByDay(sessions);
+  const pagesDay = daily.pages;
   const today = new Date();
   const dow = (today.getDay() + 6) % 7; // 0 = Monday
   const lastMonday = new Date(today);
@@ -389,41 +408,13 @@ export function computeYearWrapped(
   };
 }
 
-export interface GoalProgress {
-  goal: Goal;
-  current: number;
-}
-
-// Returns only the raw numbers; labels/units are localized in the UI layer.
-export function computeGoalProgress(
-  goal: Goal,
-  books: Book[],
-  sessions: ReadingSession[]
-): GoalProgress {
-  const todayKey = toDateKey();
-  if (goal.type === 'books_per_year') {
-    return { goal, current: countFinishesInYear(books, goal.year) };
-  }
-  if (goal.type === 'pages_per_day') {
-    const current = sessions
-      .filter((s) => s.date === todayKey)
-      .reduce((sum, s) => sum + (s.pagesRead || 0), 0);
-    return { goal, current };
-  }
-  // minutes_per_day
-  const seconds = sessions
-    .filter((s) => s.date === todayKey)
-    .reduce((sum, s) => sum + s.durationSeconds, 0);
-  return { goal, current: Math.round(seconds / 60) };
-}
-
 /** Last `n` days of pages read, oldest first - for the bar chart. */
 export function recentDailyPages(
-  sessions: ReadingSession[],
+  daily: DailyTotals,
   n = 7
 ): { date: string; pages: number; seconds: number }[] {
-  const byPages = pagesByDay(sessions);
-  const bySec = sessionsByDay(sessions);
+  const byPages = daily.pages;
+  const bySec = daily.seconds;
   const out: { date: string; pages: number; seconds: number }[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { quoteOfDay } from '../../src/lib/quoteOfDay.ts';
+const q = (id: string, createdAt: number, type = 'quote', text = id): any => ({ id, bookId: 'b', type, text, createdAt });
+const notes = [q('c', 3), q('a', 1), q('n', 2, 'note'), q('b', 2), q('blank', 4, 'quote', '  ')];
+assert.equal(quoteOfDay([], '2026-09-29'), undefined);
+const days = ['2026-09-29', '2026-09-30', '2026-10-01'].map((d) => quoteOfDay(notes, d)!.id);
+assert.deepEqual([...days].sort(), ['a', 'b', 'c'], 'three consecutive days show three different quotes');
+assert.equal(quoteOfDay(notes, '2026-09-29', 1)!.id, quoteOfDay(notes, '2026-09-30')!.id, 'next = tomorrow');
+assert.equal(quoteOfDay(notes, '2026-09-29', -1)!.id, quoteOfDay(notes, '2026-09-28')!.id);
+assert.equal(quoteOfDay(notes, '2026-09-29'), quoteOfDay(notes.slice().reverse(), '2026-09-29'), 'stable regardless of storage order');
+console.log('quoteOfDay: all assertions passed');

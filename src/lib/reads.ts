@@ -48,6 +48,8 @@ export function readCountOf(b: Book): number {
  *  to "reading" from page 0. readCount is preserved and bumped again when this
  *  cycle reaches the end (via setProgress/setStatus). */
 export function withRereadStarted(b: Book, now: number): Book {
+  // A new read starts without the previous read's deadline.
+  b = { ...b, plan: undefined };
   const reads = b.finishedAt
     ? [...(b.reads ?? []), { startedAt: b.startedAt, finishedAt: b.finishedAt }]
     : b.reads;
@@ -58,7 +60,24 @@ export function withRereadStarted(b: Book, now: number): Book {
     currentPage: 0,
     startedAt: now,
     finishedAt: undefined,
+    rereading: true,
   };
+}
+
+/** finishedAt/readCount for a book reaching "finished" (by status or by its
+ *  last page). Only a genuinely new read cycle increases readCount: a book
+ *  that already counts as read (imported "read" with no date, or already
+ *  finished) keeps its count and gets no invented finish date - unless the
+ *  cycle was started with startReread, which is always a new read. */
+export function finishFields(b: Book, now: number): Pick<Book, 'finishedAt' | 'readCount' | 'rereading'> {
+  const alreadyRead =
+    !b.rereading && (b.status === 'finished' || (b.readCount ?? 0) > (b.reads?.length ?? 0));
+  const patch: Pick<Book, 'finishedAt' | 'readCount' | 'rereading'> = {
+    finishedAt: b.finishedAt ?? (alreadyRead ? undefined : now),
+  };
+  if (!b.finishedAt && !alreadyRead) patch.readCount = (b.readCount ?? 0) + 1;
+  if (b.rereading) patch.rereading = undefined;
+  return patch;
 }
 
 /** Coerce an untrusted `reads` value (backup file, CSV) into clean records:

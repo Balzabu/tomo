@@ -2,10 +2,10 @@ import { Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { ImageWidgetSource } from 'react-native-android-widget';
-import { AppData, Book } from '@/types';
+import { AppData, Book, ReadingSession } from '@/types';
 import { loadData } from '@/lib/storage';
 import { migrateLegacyKeys } from '@/lib/migrate';
-import { resolveScheme, SchemeChoice, Theme } from '@/theme/theme';
+import { followsSystem, resolveScheme, SchemeChoice, Theme } from '@/theme/theme';
 import { Language } from '@/store/useSettings';
 import { Lang, resolveLang, translate } from '@/i18n';
 import { toDateKey } from '@/lib/utils';
@@ -24,14 +24,47 @@ export interface WidgetContext {
   systemThemes?: { light: Theme; dark: Theme };
   t: WidgetT;
   lang: Lang;
+  /** app lock on with "hide contents": widgets show nothing personal */
+  private?: boolean;
+  /** app lock state, for screens shown outside the app (widget config) */
+  lock?: { enabled: boolean; hideRecents: boolean };
 }
+
+// Headless events come in bursts (one per widget provider on a periodic
+// update, several while a widget is being dropped), and each would read and
+// parse the whole library again. Disk reads share one load while it is in
+// flight and for a short while after it resolved.
+const SHARED_LOAD_MS = 2000;
+let sharedLoad: { ctx: Promise<WidgetContext>; doneAt?: number } | null = null;
 
 /**
  * Read app data + settings from storage (works in the headless widget task).
  * Pass `preloaded` (the in-memory AppData) to skip the disk re-read when the
  * foreground store already holds fresh data.
  */
-export async function loadWidgetContext(preloaded?: AppData): Promise<WidgetContext> {
+export function loadWidgetContext(preloaded?: AppData): Promise<WidgetContext> {
+  if (preloaded) {
+    // The app just saved (or renders a fallback): a context read from disk
+    // before this is stale, don't hand it to the next headless event.
+    sharedLoad = null;
+    return buildWidgetContext(preloaded);
+  }
+  const cur = sharedLoad;
+  if (cur && (cur.doneAt == null || Date.now() - cur.doneAt < SHARED_LOAD_MS)) return cur.ctx;
+  const entry: { ctx: Promise<WidgetContext>; doneAt?: number } = { ctx: buildWidgetContext() };
+  sharedLoad = entry;
+  entry.ctx.then(
+    () => {
+      entry.doneAt = Date.now();
+    },
+    () => {
+      if (sharedLoad === entry) sharedLoad = null;
+    }
+  );
+  return entry.ctx;
+}
+
+async function buildWidgetContext(preloaded?: AppData): Promise<WidgetContext> {
   // Headless widget updates can run before the app is first opened after the
   // update, so migrate the legacy storage keys here too (idempotent, no-op once
   // done). When `preloaded` is passed, the app already migrated.
@@ -57,11 +90,26 @@ export async function loadWidgetContext(preloaded?: AppData): Promise<WidgetCont
   const theme = resolveScheme(scheme, sys);
   const lang = resolveLang(language);
   const t: WidgetT = (key, params) => translate(lang, key, params);
-  const systemThemes =
-    scheme === 'system'
-      ? { light: resolveScheme('system', 'light'), dark: resolveScheme('system', 'dark') }
-      : undefined;
-  return { data, theme, systemThemes, t, lang };
+  const systemThemes = followsSystem(scheme)
+    ? { light: resolveScheme(scheme, 'light'), dark: resolveScheme(scheme, 'dark') }
+    : undefined;
+  let isPrivate = false;
+  let lock = { enabled: false, hideRecents: false };
+  try {
+    const raw = await AsyncStorage.getItem('tomo:lock:v1');
+    // No key at all: the lock was never turned on.
+    if (raw != null) {
+      const cfg = JSON.parse(raw) as { enabled?: boolean; hash?: string; hidePrivate?: boolean; hideRecents?: boolean };
+      const enabled = !!cfg.enabled && !!cfg.hash;
+      isPrivate = enabled && cfg.hidePrivate !== false;
+      lock = { enabled, hideRecents: enabled && cfg.hideRecents !== false };
+    }
+  } catch {
+    // Unreadable or corrupt: it may well be on - fail closed.
+    isPrivate = true;
+    lock = { enabled: true, hideRecents: true };
+  }
+  return { data, theme, systemThemes, t, lang, private: isPrivate, lock };
 }
 
 /** Cast a runtime hex string to the widget ColorProp type. */
@@ -112,6 +160,9 @@ export const ICON = {
   trophy: '\uf602',
   checkmark: '\uf21d',
   chevron: '\uf23b',
+  quote: '\uf20c',
+  shuffle: '\uf583',
+  flag: '\uf310',
 } as const;
 
 /** Build a deep link the widgets open via clickAction OPEN_URI. */
@@ -219,14 +270,26 @@ export function progressPct(book: Book): number {
   return Math.max(0, Math.min(100, Math.round((book.currentPage / book.pageCount) * 100)));
 }
 
+// Seconds read per book, once per sessions array: the "Currently reading"
+// widget needs it both to order the books and for the shown book's total.
+const timeCache = new WeakMap<ReadingSession[], Map<string, number>>();
+function timeByBookOf(sessions: ReadingSession[]): Map<string, number> {
+  let timeByBook = timeCache.get(sessions);
+  if (!timeByBook) {
+    timeByBook = new Map<string, number>();
+    for (const s of sessions) {
+      timeByBook.set(s.bookId, (timeByBook.get(s.bookId) ?? 0) + s.durationSeconds);
+    }
+    timeCache.set(sessions, timeByBook);
+  }
+  return timeByBook;
+}
+
 /** All currently-reading books, ordered by most accumulated reading time. */
 export function readingBooks(data: AppData): Book[] {
   const reading = data.books.filter((b) => b.status === 'reading');
   if (reading.length === 0) return [];
-  const timeByBook = new Map<string, number>();
-  for (const s of data.sessions) {
-    timeByBook.set(s.bookId, (timeByBook.get(s.bookId) ?? 0) + s.durationSeconds);
-  }
+  const timeByBook = timeByBookOf(data.sessions);
   return [...reading].sort(
     (a, b) =>
       (timeByBook.get(b.id) ?? 0) - (timeByBook.get(a.id) ?? 0) || b.addedAt - a.addedAt
@@ -239,9 +302,7 @@ export function mostReadBook(data: AppData): Book | undefined {
 }
 
 export function bookTotalSeconds(data: AppData, bookId: string): number {
-  return data.sessions
-    .filter((s) => s.bookId === bookId)
-    .reduce((sum, s) => sum + s.durationSeconds, 0);
+  return timeByBookOf(data.sessions).get(bookId) ?? 0;
 }
 
 /** Books you haven't finished (reading, to-read, paused): reading first, and

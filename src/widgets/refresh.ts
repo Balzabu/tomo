@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import { AppData } from '@/types';
 import { loadWidgetContext } from './widget-shared';
 
-const NAMES = ['CurrentlyReading', 'QuickStart', 'StreakGoal', 'Heatmap'] as const;
+const NAMES = ['CurrentlyReading', 'QuickStart', 'StreakGoal', 'Heatmap', 'Quote'] as const;
 
 /**
  * Re-render all placed widgets with fresh data. Android-only and best-effort:

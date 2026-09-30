@@ -7,6 +7,7 @@ import { durationUnits, formatInt, useTranslation } from '@/i18n';
 import { monthsShort } from '@/i18n/strings';
 import { availableWrappedYears, computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
+import { finishesOf } from '@/lib/reads';
 import { Button, EmptyState, Pill } from '@/components/ui';
 import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
 import { ShareStyleControls } from '@/components/ShareStyleControls';
@@ -36,6 +37,20 @@ export default function WrappedScreen() {
     () => (year != null ? computeYearWrapped(books, sessions, year) : null),
     [books, sessions, year]
   );
+  // The covers of the year's books, most recently finished first.
+  const covers = useMemo(() => {
+    if (year == null) return [];
+    const done: { at: number; uri: string }[] = [];
+    for (const b of books) {
+      if (!b.coverUrl) continue;
+      const last = finishesOf(b)
+        .map((r) => r.finishedAt)
+        .filter((at) => new Date(at).getFullYear() === year)
+        .sort((a, z) => z - a)[0];
+      if (last) done.push({ at: last, uri: b.coverUrl });
+    }
+    return done.sort((a, z) => z.at - a.at).slice(0, 6).map((d) => d.uri);
+  }, [books, year]);
   const c = t.colors;
 
   if (year == null || !w) {
@@ -47,11 +62,11 @@ export default function WrappedScreen() {
   }
 
   const months = monthsShort[lang] ?? monthsShort.en;
-  const tiles = [
-    { label: tr('wrapped.booksRead'), value: String(w.booksFinished) },
+  const stats = [
     { label: tr('wrapped.pagesRead'), value: formatInt(w.pagesRead, lang) },
     { label: tr('wrapped.timeRead'), value: formatDuration(w.secondsRead, durationUnits(lang)) },
-    { label: tr('wrapped.longestStreak'), value: String(w.longestStreak) },
+    { label: tr('wrapped.longestStreak'), value: tr('wrapped.streakValue', { n: w.longestStreak }) },
+    { label: tr('wrapped.sessions'), value: formatInt(w.sessions, lang) },
   ];
   const highlights: { label: string; value: string }[] = [];
   if (w.topAuthor) highlights.push({ label: tr('wrapped.topAuthor'), value: w.topAuthor.name });
@@ -62,7 +77,7 @@ export default function WrappedScreen() {
   const shareCard = async () => {
     if (busy) return;
     setBusy(true);
-    const res = await shareViewAsImage(cardRef);
+    const res = await shareViewAsImage(cardRef, { preloadUrls: covers });
     setBusy(false);
     if (res === 'failed') Alert.alert(tr('share.failedTitle'), tr('share.failedMsg'));
     else if (res === 'unavailable') Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
@@ -97,9 +112,12 @@ export default function WrappedScreen() {
         width={CARD_W}
         content={{
           kind: 'wrapped',
-          heading: tr('wrapped.title', { year }),
-          tiles,
+          kicker: tr('share.kicker.year'),
+          year: String(year),
+          hero: { value: formatInt(w.booksFinished, lang), label: tr('wrapped.booksRead') },
+          stats,
           highlights: highlights.slice(0, 4),
+          covers,
         }}
       />
       <View style={{ width: '100%', maxWidth: 480 }}>

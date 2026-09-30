@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { plainText } from '@/lib/plainText';
 import {
   Pressable,
   ScrollView,
@@ -23,6 +24,11 @@ import { RatingStars } from '@/components/RatingStars';
 import { QuoteShareModal } from '@/components/QuoteShareModal';
 import { SessionEditor, SessionDraft } from '@/components/SessionEditor';
 import { Dialog } from '@/components/Dialog';
+import { NoteItem, NoteModal } from '@/components/NoteEditor';
+import { PlanBox } from '@/components/PlanBox';
+import { ReadingCurve } from '@/components/ReadingCurve';
+import { MemoryShareModal } from '@/components/MemoryShareModal';
+import { readingCurve } from '@/lib/plan';
 import { ReadingSession } from '@/types';
 import { estimateRemaining } from '@/lib/stats';
 import { readCountOf } from '@/lib/reads';
@@ -40,7 +46,7 @@ export default function BookDetailScreen() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
   const units = durationUnits(lang);
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, memory } = useLocalSearchParams<{ id: string; memory?: string }>();
   const book = useBook(id);
   // Actions have stable identity, so read them once (non-reactive) instead of
   // subscribing the whole screen to every store change; subscribe only to the
@@ -80,6 +86,20 @@ export default function BookDetailScreen() {
   const [shareOpen, setShareOpen] = useState(false);
   const [sessionEdit, setSessionEdit] = useState<ReadingSession | null>(null);
   const [sessionAddOpen, setSessionAddOpen] = useState(false);
+  // Reading memory: opened from the "finished!" snackbar or ?memory=1.
+  const [memoryOpen, setMemoryOpen] = useState(memory === '1');
+
+  const curve = useMemo(() => (book ? readingCurve(book, sessions) : []), [book, sessions]);
+
+  // Finishing a book here (status pill, progress update, a session reaching
+  // the last page) offers the memory card - a nudge, never a popup.
+  const prevStatus = useRef(book?.status);
+  useEffect(() => {
+    const was = prevStatus.current;
+    prevStatus.current = book?.status;
+    if (!book || was === undefined || was === 'finished' || book.status !== 'finished') return;
+    showSnackbar(tr('memory.finished'), { actionLabel: tr('memory.create'), onAction: () => setMemoryOpen(true) });
+  }, [book?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalSeconds = useMemo(
     () => sessions.reduce((s, x) => s + x.durationSeconds, 0),
@@ -127,10 +147,16 @@ export default function BookDetailScreen() {
       startTime = d.getTime();
     }
     const durationSeconds = draft.minutes * 60;
+    // A session counts for the day it ends: keep that the chosen day, and never
+    // in the future (a long session "today" ends now at the latest).
+    const dayEnd = new Date(draft.dayTs);
+    dayEnd.setHours(23, 59, 59, 0);
+    const endTime = Math.min(startTime + durationSeconds * 1000, dayEnd.getTime(), Date.now());
+    startTime = endTime - durationSeconds * 1000;
     if (existing) {
       store.updateSession(existing.id, {
         startTime,
-        endTime: startTime + durationSeconds * 1000,
+        endTime,
         durationSeconds,
         startPage: draft.startPage,
         endPage: draft.endPage,
@@ -140,7 +166,7 @@ export default function BookDetailScreen() {
       store.addSession({
         bookId: id!,
         startTime,
-        endTime: startTime + durationSeconds * 1000,
+        endTime,
         durationSeconds,
         startPage: draft.startPage,
         endPage: draft.endPage,
@@ -355,7 +381,33 @@ export default function BookDetailScreen() {
             </Text>
           </View>
         ) : null}
+        <PlanBox book={book} sessions={sessions} />
       </Card>
+
+      {curve.length >= 2 ? (
+        <Card style={{ gap: spacing.md }}>
+          <SectionTitle>{tr('curve.title')}</SectionTitle>
+          <ReadingCurve points={curve} pageCount={book.pageCount} plan={book.status === 'finished' ? undefined : book.plan} />
+          {book.plan && book.status !== 'finished' ? (
+            <Text style={[styles.muted, { color: t.colors.textFaint, fontSize: 12 }]}>{tr('curve.planLegend')}</Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {book.status === 'finished' ? (
+        <Pressable onPress={() => setMemoryOpen(true)} accessibilityRole="button">
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <View style={[styles.memoryIcon, { backgroundColor: t.colors.cardAlt }]}>
+              <Ionicons name="sparkles" size={20} color={t.colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.body, { color: t.colors.text, fontWeight: '800', fontSize: 15 }]}>{tr('memory.title')}</Text>
+              <Text style={[styles.muted, { color: t.colors.textMuted }]}>{tr('memory.sub')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={t.colors.textFaint} />
+          </Card>
+        </Pressable>
+      ) : null}
 
       {/* Next in series */}
       {nextInSeries ? (
@@ -499,7 +551,7 @@ export default function BookDetailScreen() {
             numberOfLines={descExpanded ? undefined : 5}
             style={[styles.body, { color: t.colors.textMuted, lineHeight: 21 }]}
           >
-            {book.description}
+            {plainText(book.description)}
           </Text>
           <Pressable onPress={() => setDescExpanded((v) => !v)}>
             <Text style={[styles.link, { color: t.colors.primary }]}>
@@ -551,22 +603,36 @@ export default function BookDetailScreen() {
         open={noteOpen !== null || noteEdit !== null}
         type={noteEdit?.type ?? noteOpen ?? 'note'}
         initial={noteEdit ? { text: noteEdit.text, page: noteEdit.page } : undefined}
+        defaultPage={book.currentPage}
         onClose={() => {
           setNoteOpen(null);
           setNoteEdit(null);
         }}
-        onSave={(text, page) => {
+        onSave={(text, page, type) => {
           if (text.trim()) {
             if (noteEdit) {
-              store.updateNote(noteEdit.id, { text: text.trim(), page });
+              store.updateNote(noteEdit.id, { text: text.trim(), page, type });
             } else {
-              store.addNote({ bookId: book.id, type: noteOpen ?? 'note', text: text.trim(), page });
+              store.addNote({ bookId: book.id, type, text: text.trim(), page });
             }
             void Haptics.selectionAsync();
           }
           setNoteOpen(null);
           setNoteEdit(null);
         }}
+        onDelete={
+          noteEdit
+            ? () => {
+                const removed = store.deleteNote(noteEdit.id);
+                setNoteEdit(null);
+                if (!removed) return;
+                showSnackbar(tr('note.deleted'), {
+                  actionLabel: tr('common.undo'),
+                  onAction: () => store.restoreNote(removed),
+                });
+              }
+            : undefined
+        }
       />
 
       <QuoteShareModal
@@ -575,10 +641,14 @@ export default function BookDetailScreen() {
         title={book.title}
         author={book.authors.join(', ') || tr('common.unknownAuthor')}
         page={shareNote?.page}
+        coverUrl={book.coverUrl}
         onClose={() => setShareNote(null)}
       />
 
       <BookShareModal visible={shareOpen} book={book} onClose={() => setShareOpen(false)} />
+      {book.status === 'finished' ? (
+        <MemoryShareModal visible={memoryOpen} book={book} onClose={() => setMemoryOpen(false)} />
+      ) : null}
 
       <SessionEditor
         visible={sessionAddOpen}
@@ -603,55 +673,6 @@ function MiniStat({ label, value, t }: { label: string; value: string; t: Return
     <View style={styles.miniStat}>
       <Text style={[styles.miniValue, { color: t.colors.text }]}>{value}</Text>
       <Text style={[styles.miniLabel, { color: t.colors.textFaint }]}>{label}</Text>
-    </View>
-  );
-}
-
-function NoteItem({
-  note,
-  onEdit,
-  onDelete,
-  onShare,
-}: {
-  note: BookNote;
-  onEdit: () => void;
-  onDelete: () => void;
-  onShare: () => void;
-}) {
-  const t = useTheme();
-  const { t: tr } = useTranslation();
-  const isQuote = note.type === 'quote';
-  return (
-    <View
-      style={[
-        styles.note,
-        {
-          backgroundColor: t.colors.cardAlt,
-          borderLeftColor: isQuote ? t.colors.accent : t.colors.primary,
-        },
-      ]}
-    >
-      <Pressable
-        style={{ flex: 1 }}
-        onPress={onEdit}
-        accessibilityRole="button"
-        accessibilityLabel={isQuote ? tr('book.editQuote') : tr('book.editNote')}
-      >
-        <Text style={[styles.noteText, { color: t.colors.text, fontStyle: isQuote ? 'italic' : 'normal' }]}>
-          {isQuote ? `“${note.text}”` : note.text}
-        </Text>
-        {note.page != null ? (
-          <Text style={[styles.notePage, { color: t.colors.textFaint }]}>{tr('common.pageAbbr')} {note.page}</Text>
-        ) : null}
-      </Pressable>
-      <View style={{ gap: 12, alignItems: 'center' }}>
-        <Pressable onPress={onShare} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('wrapped.share')}>
-          <Ionicons name="share-social-outline" size={16} color={t.colors.primary} />
-        </Pressable>
-        <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
-          <Ionicons name="close" size={16} color={t.colors.textFaint} />
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -770,66 +791,6 @@ function TextModal({
   );
 }
 
-function NoteModal({
-  open,
-  type,
-  initial,
-  onClose,
-  onSave,
-}: {
-  open: boolean;
-  type: 'note' | 'quote';
-  /** set when editing an existing note/quote */
-  initial?: { text: string; page?: number };
-  onClose: () => void;
-  onSave: (text: string, page?: number) => void;
-}) {
-  const t = useTheme();
-  const { t: tr } = useTranslation();
-  const [val, setVal] = useState('');
-  const [page, setPage] = useState('');
-  const title = initial
-    ? type === 'quote' ? tr('book.editQuote') : tr('book.editNote')
-    : type === 'quote' ? tr('book.newQuote') : tr('book.newNote');
-  return (
-    <CenterModal
-      open={open}
-      onClose={onClose}
-      title={title}
-      onShow={() => {
-        setVal(initial?.text ?? '');
-        setPage(initial?.page != null ? String(initial.page) : '');
-      }}
-    >
-      <TextInput
-        value={val}
-        onChangeText={setVal}
-        multiline
-        autoFocus
-        placeholder={type === 'quote' ? tr('book.quotePlaceholder') : tr('book.notePlaceholder')}
-        placeholderTextColor={t.colors.textFaint}
-        style={[
-          styles.modalInput,
-          { backgroundColor: t.colors.cardAlt, color: t.colors.text, height: 120, textAlignVertical: 'top' },
-        ]}
-      />
-      <TextInput
-        value={page}
-        onChangeText={setPage}
-        keyboardType="numeric"
-        placeholder={tr('book.pageOptional')}
-        placeholderTextColor={t.colors.textFaint}
-        style={[styles.modalInput, { backgroundColor: t.colors.cardAlt, color: t.colors.text }]}
-      />
-      <Button
-        label={tr('common.save')}
-        full
-        onPress={() => onSave(val, page ? parseInt(page, 10) || undefined : undefined)}
-      />
-    </CenterModal>
-  );
-}
-
 function CenterModal({
   open,
   onClose,
@@ -869,17 +830,9 @@ const styles = StyleSheet.create({
   miniLabel: { fontSize: 11 },
   body: { fontSize: 14 },
   muted: { fontSize: 14 },
-  note: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderLeftWidth: 3,
-  },
-  noteText: { fontSize: 14, lineHeight: 20 },
-  notePage: { fontSize: 12, marginTop: 4 },
   sessionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  memoryIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   modalCard: { width: '100%', borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

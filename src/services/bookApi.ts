@@ -1,4 +1,5 @@
 import { BookSearchResult } from '@/types';
+import { plainText } from '@/lib/plainText';
 import { bestIsbn, compactIsbn, looksLikeIsbn, normalizeIsbn } from '@/lib/isbn';
 import { pagesFromPhysicalDescription, validPageCount } from '@/lib/pages';
 
@@ -188,7 +189,7 @@ function mapGoogleVolume(v: GoogleVolume): BookSearchResult | null {
     coverUrl: httpsCover(info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail),
     isbn,
     pageCount: validPageCount(info.pageCount),
-    description: info.description,
+    description: plainText(info.description),
     publisher: info.publisher,
     publishedDate: info.publishedDate,
     categories: info.categories,
@@ -260,7 +261,7 @@ function mapGEntry(e: GEntry): BookSearchResult | null {
     coverUrl: httpsCover(thumb) ?? olCoverFromIsbn(isbn),
     isbn,
     pageCount,
-    description: e.dc$description?.[0]?.$t || undefined,
+    description: plainText(e.dc$description?.[0]?.$t),
     publisher: e.dc$publisher?.[0]?.$t,
     publishedDate: e.dc$date?.[0]?.$t,
     language: e.dc$language?.[0]?.$t,

@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["io.balzabu.tomo.system.TomoSystemModule"]
+  }
+}

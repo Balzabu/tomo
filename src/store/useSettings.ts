@@ -14,6 +14,8 @@ interface SettingsState {
   reminderEnabled: boolean;
   reminderHour: number;
   reminderMinute: number;
+  /** skip the reminder on days you've already read */
+  reminderSmart: boolean;
   librarySort: LibrarySort;
   librarySortAsc: boolean;
   libraryFilter: LibraryFilter;
@@ -22,6 +24,7 @@ interface SettingsState {
   setScheme: (scheme: SchemeChoice) => void;
   setLanguage: (language: Language) => void;
   setReminder: (enabled: boolean, hour: number, minute: number) => void;
+  setReminderSmart: (smart: boolean) => void;
   setLibraryView: (view: Partial<Pick<SettingsState, 'librarySort' | 'librarySortAsc' | 'libraryFilter'>>) => void;
 }
 
@@ -33,6 +36,7 @@ interface Persisted {
   reminderEnabled: boolean;
   reminderHour: number;
   reminderMinute: number;
+  reminderSmart?: boolean;
   librarySort?: LibrarySort;
   librarySortAsc?: boolean;
   libraryFilter?: LibraryFilter;
@@ -61,6 +65,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   reminderEnabled: false,
   reminderHour: 20,
   reminderMinute: 0,
+  reminderSmart: true,
   librarySort: 'recent',
   librarySortAsc: false,
   libraryFilter: { kind: 'all' },
@@ -76,6 +81,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
           reminderEnabled: p.reminderEnabled ?? false,
           reminderHour: p.reminderHour ?? 20,
           reminderMinute: p.reminderMinute ?? 0,
+          reminderSmart: p.reminderSmart !== false,
           librarySort: LIBRARY_SORTS.includes(p.librarySort as LibrarySort) ? (p.librarySort as LibrarySort) : 'recent',
           librarySortAsc: p.librarySortAsc === true,
           libraryFilter: sanitizeFilter(p.libraryFilter),
@@ -106,6 +112,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
     persist(snapshot(get, { reminderEnabled, reminderHour, reminderMinute }));
   },
 
+  setReminderSmart: (reminderSmart) => {
+    set({ reminderSmart });
+    persist(snapshot(get, { reminderSmart }));
+  },
+
   setLibraryView: (view) => {
     set(view);
     persist(snapshot(get, view));
@@ -134,6 +145,7 @@ function snapshot(get: () => SettingsState, override: Partial<Persisted>): Persi
     reminderEnabled: s.reminderEnabled,
     reminderHour: s.reminderHour,
     reminderMinute: s.reminderMinute,
+    reminderSmart: s.reminderSmart,
     librarySort: s.librarySort,
     librarySortAsc: s.librarySortAsc,
     libraryFilter: s.libraryFilter,

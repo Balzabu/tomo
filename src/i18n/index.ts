@@ -5,13 +5,14 @@ import { Language, useSettings } from '@/store/useSettings';
 import {
   dict,
   Lang,
+  monthsLong,
   monthsShort,
   weekdayInitials,
   weekdaysShort,
 } from './strings';
 
 export type { Lang } from './strings';
-export { weekdaysShort, weekdayInitials } from './strings';
+export { weekdaysShort, weekdayInitials, monthsLong } from './strings';
 
 const SUPPORTED: Lang[] = ['it', 'en', 'es', 'fr', 'de', 'pt'];
 
@@ -92,4 +93,17 @@ export function localizedWeekdaysShort(lang: Lang): string[] {
 
 export function localizedWeekdayInitials(lang: Lang): string[] {
   return weekdayInitials[lang];
+}
+
+/** Date for a local day key (YYYY-MM-DD) - never goes through UTC. */
+export function formatDateKey(key: string, lang: Lang): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return formatDate(new Date(y, m - 1, d, 12).getTime(), lang);
+}
+
+/** "dicembre 2026" / "December 2026": month names are lower-case mid-sentence
+ *  everywhere except in English and German. */
+export function formatMonthYear(key: string, lang: Lang): string {
+  const name = monthsLong[lang][Number(key.slice(5, 7)) - 1];
+  return `${lang === 'en' || lang === 'de' ? name : name.toLowerCase()} ${key.slice(0, 4)}`;
 }

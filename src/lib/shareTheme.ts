@@ -4,3 +4,4 @@ export const SHARE_PAPER_BG = '#f3ead7';
 export const SHARE_PAPER_TEXT = '#3a2f23';
 export const SHARE_PAPER_MUTED = '#7a6a52';
 export const SHARE_IMMERSIVE_BG = '#15151b';
+export const SHARE_PAPER_ACCENT = '#9a4a2a';

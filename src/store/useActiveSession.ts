@@ -47,16 +47,24 @@ interface ActiveSessionState {
   adopted: boolean;
   /** a "Finish" request (from the notification) for an already-mounted timer */
   finishRequested: boolean;
+  /** a "Quote" request (from the notification) for the mounted timer */
+  captureRequested: boolean;
 
   hydrate: () => Promise<void>;
   start: (bookId: string) => void;
   pause: () => void;
+  /** pause as of the last heartbeat: time since then isn't counted */
+  pauseAtLastTick: () => void;
+  /** set a paused session's elapsed time (the user's answer to how long it was) */
+  setElapsed: (seconds: number) => void;
   resume: () => void;
   tick: () => void;
   setNotificationId: (id: string) => void;
   markAdopted: () => void;
   requestFinish: () => void;
   clearFinishRequest: () => void;
+  requestCapture: () => void;
+  clearCaptureRequest: () => void;
   clear: () => void;
 }
 
@@ -79,6 +87,7 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
   active: null,
   adopted: false,
   finishRequested: false,
+  captureRequested: false,
 
   hydrate: async () => {
     try {
@@ -120,7 +129,7 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
       runningSince: now,
       lastTick: now,
     };
-    set({ active, adopted: true, finishRequested: false });
+    set({ active, adopted: true, finishRequested: false, captureRequested: false });
     persist(active);
   },
 
@@ -134,6 +143,26 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
       runningSince: null,
       lastTick: now,
     };
+    set({ active: next });
+    persist(next);
+  },
+
+  pauseAtLastTick: () => {
+    const { active } = get();
+    if (!active || active.runningSince == null) return;
+    const next: ActiveSession = {
+      ...active,
+      accumulatedSeconds: sessionElapsedAtLastTick(active),
+      runningSince: null,
+    };
+    set({ active: next });
+    persist(next);
+  },
+
+  setElapsed: (seconds) => {
+    const { active } = get();
+    if (!active || active.runningSince != null) return;
+    const next: ActiveSession = { ...active, accumulatedSeconds: Math.max(0, Math.round(seconds)) };
     set({ active: next });
     persist(next);
   },
@@ -172,12 +201,17 @@ export const useActiveSession = create<ActiveSessionState>((set, get) => ({
 
   requestFinish: () => set({ finishRequested: true }),
   clearFinishRequest: () => set({ finishRequested: false }),
+  requestCapture: () => set({ captureRequested: true }),
+  clearCaptureRequest: () => set({ captureRequested: false }),
 
   clear: () => {
     // Always dismiss the ongoing notification so no caller can orphan it (e.g.
     // the timer dropping a stray session started for a different book).
-    void dismissSessionNotification(get().active?.notificationId);
-    set({ active: null, finishRequested: false });
+    // The id is deterministic: a process killed before it was saved must not
+    // leave the un-swipeable notification behind.
+    const a = get().active;
+    void dismissSessionNotification(a?.notificationId ?? (a ? `session-${a.bookId}` : undefined));
+    set({ active: null, finishRequested: false, captureRequested: false });
     persist(null);
   },
 }));

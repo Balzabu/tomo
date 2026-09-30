@@ -1,13 +1,13 @@
 import { create } from 'zustand';
-import { AppState } from 'react-native';
+import { AppState, InteractionManager } from 'react-native';
 import {
   AppData,
   Book,
   BookNote,
   BookSearchResult,
   Goal,
-  GoalType,
-  ImportedBook,
+  GoalMetric,
+  GoalPeriod,
   ReadRecord,
   ReadingSession,
   ReadingStatus,
@@ -24,7 +24,10 @@ import {
 import { STORAGE_WARN_CHARS } from '@/lib/storageCore';
 import { toDateKey, uid } from '@/lib/utils';
 import { isbnKey, keepIsbn, normalizeBookIsbns } from '@/lib/isbn';
-import { sanitizeReads, withRereadStarted } from '@/lib/reads';
+import { finishFields, sanitizeReads, withRereadStarted } from '@/lib/reads';
+import { legacyTypeOf, normalizeGoals } from '@/lib/goals';
+import { mergeData, MergeSummary, stampChanges } from '@/lib/sync';
+import type { ImportBundle } from '@/lib/importBundle';
 import { SHELF_COLORS } from '@/theme/theme';
 import { refreshWidgets } from '@/widgets/refresh';
 import { useSnackbar } from '@/store/useSnackbar';
@@ -36,11 +39,23 @@ interface StoreState extends AppData {
 
   hydrate: () => Promise<void>;
   replaceAll: (data: AppData) => Promise<void>;
+  /** Merge a backup into the library (newer copy of each item wins). Returns
+   *  what changed plus local cover files no book references any more. */
+  mergeAll: (data: AppData) => Promise<{ summary: MergeSummary; orphanedCovers: string[] }>;
 
   // Books
   addBook: (result: BookSearchResult, status?: ReadingStatus) => Book;
   addManualBook: (input: Partial<Book> & { title: string }) => Book;
-  addImportedBooks: (items: ImportedBook[]) => { added: number; skipped: number; addedIds: string[] };
+  /** Import books with their notes and sessions (another app's export).
+   *  Books already in the library are matched, not duplicated - their notes
+   *  and sessions are still added when missing. Covers must already be URLs. */
+  importBundle: (bundle: ImportBundle) => {
+    added: number;
+    matched: number;
+    notes: number;
+    sessions: number;
+    addedIds: string[];
+  };
   updateBook: (id: string, patch: Partial<Book>) => void;
   updateBooks: (
     patches: { id: string; patch: Partial<Book> }[],
@@ -82,7 +97,17 @@ interface StoreState extends AppData {
   deleteShelf: (id: string) => void;
 
   // Goals
-  setGoal: (type: GoalType, target: number) => Goal;
+  /** Create or update a goal. Recurring goals (day/month/year) are unique per
+   *  metric+period, so saving one replaces the existing target. */
+  saveGoal: (input: {
+    id?: string;
+    metric: GoalMetric;
+    period: GoalPeriod;
+    target: number;
+    start?: string;
+    end?: string;
+    name?: string;
+  }) => Goal;
   deleteGoal: (id: string) => void;
 }
 
@@ -98,8 +123,8 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let latestGet: (() => StoreState) | null = null;
 
 function snapshot(get: () => StoreState): AppData {
-  const { books, sessions, notes, shelves, goals, version } = get();
-  return { books, sessions, notes, shelves, goals, version };
+  const { books, sessions, notes, shelves, goals, deleted, version } = get();
+  return { books, sessions, notes, shelves, goals, deleted, version };
 }
 
 // Tell the user a disk write failed (storage full / AsyncStorage limit) - the
@@ -133,29 +158,40 @@ function notifyStorageLarge(): void {
 // or alarm the user when a newer flush has already taken over.
 let flushSeq = 0;
 
-function flushPersist(): void {
+function flushPersist(): Promise<boolean> {
   if (persistTimer) {
     clearTimeout(persistTimer);
     persistTimer = null;
   }
-  if (!latestGet) return;
+  if (!latestGet) return Promise.resolve(true);
   const get = latestGet;
   const data = snapshot(get);
   // Clear the pending marker so an unchanged store isn't re-serialised (and all
   // widgets re-rendered) on every subsequent app backgrounding.
   latestGet = null;
   const seq = ++flushSeq;
-  void saveData(data).then((ok) => {
+  return saveData(data).then((ok) => {
     if (ok) {
       notifyStorageLarge();
-      return refreshWidgets(data);
+      // Rendering every placed widget is real JS work: let a running
+      // animation or gesture (the screen that caused this save) finish first.
+      InteractionManager.runAfterInteractions(() => void refreshWidgets(data));
+      return true;
     }
-    if (seq !== flushSeq) return; // a newer flush reports its own outcome
+    if (seq !== flushSeq) return false; // a newer flush reports its own outcome
     // Keep the write pending so the next mutation/backgrounding retries it,
     // unless a newer mutation already re-armed it.
     latestGet = latestGet ?? get;
     notifyPersistFailure();
+    return false;
   });
+}
+
+/** Write any pending change now; true once it is on disk. For cleanup that
+ *  must only happen after the data no longer points at something (e.g. an old
+ *  cover file). */
+export function persistNow(): Promise<boolean> {
+  return flushPersist();
 }
 
 // Drop any queued incremental write (timer *and* pending marker) - used when a
@@ -181,7 +217,7 @@ function persist(get: () => StoreState) {
 
 // Flush any pending write before the app is backgrounded / killed.
 AppState.addEventListener('change', (state) => {
-  if (state !== 'active') flushPersist();
+  if (state !== 'active') void flushPersist();
 });
 
 /** Merge a metadata patch into a book. Corrections must never leave
@@ -198,40 +234,115 @@ function applyBookPatch(b: Book, patch: Partial<Book>): Book {
   return next;
 }
 
-export const useStore = create<StoreState>((set, get) => ({
-  ...emptyData,
-  hydrated: false,
+/** A book moved to `currentPage` (clamped to its length): starts it when it
+ *  leaves want-to-read, finishes it on the last page, and moves a finished
+ *  book back to reading when the page is corrected downwards. Always returns
+ *  a new object (the change is stamped even when the page is the same). */
+function applyProgress(b: Book, currentPage: number): Book {
+  const max = b.pageCount && b.pageCount > 0 ? b.pageCount : Infinity;
+  const page = Math.max(0, Math.min(currentPage, max));
+  const patch: Partial<Book> = { currentPage: page };
+  if (b.status === 'want_to_read' && page > 0) {
+    patch.status = 'reading';
+    patch.startedAt = b.startedAt ?? Date.now();
+  }
+  if (b.pageCount && page >= b.pageCount) {
+    patch.status = 'finished';
+    // startReread clears finishedAt; ordinary status corrections keep it.
+    // Re-saving the last page of a book already read (imported without a
+    // date) is not a new read - see finishFields.
+    Object.assign(patch, finishFields(b, Date.now()));
+  } else if (b.status === 'finished' && b.pageCount && page < b.pageCount) {
+    // Moving a finished book back to an earlier page is a correction
+    // ("I hadn't actually finished"): it can't stay "finished at page
+    // 50 of 300". finishedAt/readCount are kept, like setStatus does.
+    patch.status = 'reading';
+  }
+  return { ...b, ...patch };
+}
 
-  hydrate: async () => {
+export const useStore = create<StoreState>((rawSet, get) => {
+  // Every mutation goes through here: items whose object changed get
+  // `updatedAt`, removed ones a tombstone (see src/lib/sync.ts). Loading and
+  // full replaces use rawSet - they must keep the timestamps they carry.
+  const set = (
+    partial: Partial<StoreState> | ((s: StoreState) => Partial<StoreState> | StoreState)
+  ) =>
+    rawSet((s) => {
+      const patch = typeof partial === 'function' ? partial(s) : partial;
+      return patch === s ? s : stampChanges(s, patch);
+    });
+
+  // The load behind hydrate(), run at most once at a time (see hydrate).
+  let hydrating: Promise<void> | null = null;
+  const hydrateOnce = async () => {
+    if (get().hydrated) return;
     const data = await loadData();
     // One-shot, idempotent: books saved before ISBN normalisation get their
     // canonical ISBN-13 (same array ref when nothing changes, so no write).
     const { books, changed } = normalizeBookIsbns(data.books);
-    set({ ...data, books, hydrated: true });
-    if (changed) persist(get);
+    // Pre-1.4 goals ({type, year}) become metric+period goals.
+    const goals = normalizeGoals(data.goals);
+    const goalsChanged =
+      goals.length !== data.goals.length ||
+      data.goals.some((g) => !(g as Partial<Goal>).metric);
+    rawSet({ ...data, books, goals, deleted: data.deleted ?? [], hydrated: true });
+    if (changed || goalsChanged) persist(get);
     if (didReadFail()) {
       // Tell the user why the library is empty and that changes won't be
       // saved, rather than letting them rebuild it on top of a blocked disk.
       const lang = resolveLang(useSettings.getState().language);
       useSnackbar.getState().show(translate(lang, 'data.loadFailed'));
     }
+  };
+
+  return {
+  ...emptyData,
+  hydrated: false,
+
+  hydrate: () => {
+    // Once per process: the root layout can remount (a deep link into the
+    // running app), and re-reading the disk then would throw away changes
+    // still waiting in the debounced write. A remount *during* the first load
+    // gets the same promise instead of starting a second read that would
+    // land later and overwrite what the user did meanwhile.
+    if (!hydrating) {
+      const run = hydrateOnce();
+      hydrating = run;
+      // A failed load may be retried by the next call, as before.
+      run.catch(() => {
+        if (hydrating === run) hydrating = null;
+      });
+    }
+    return hydrating;
   },
 
   replaceAll: async (data) => {
     // A full replace supersedes any queued incremental write.
     cancelPendingPersist();
     const prev = snapshot(get);
-    const next: AppData = { ...emptyData, ...data };
-    set(next);
+    const next: AppData = { ...emptyData, ...data, goals: normalizeGoals(data.goals ?? []) };
+    rawSet(next);
     const ok = await saveData(next, { force: true });
     if (!ok) {
       // Roll the memory back so UI, disk and widgets keep agreeing - a
       // "failed" import must not stay live on screen and then get silently
       // committed by the next successful incremental write.
-      set(prev);
+      rawSet(prev);
+      // The replace cancelled any pending write of `prev`: re-arm it, or
+      // changes made just before the failed restore/clear would never reach
+      // disk. (Not when the disk couldn't be read - writes are blocked then.)
+      if (!didReadFail()) persist(get);
       throw new Error(PERSIST_FAILED);
     }
     void refreshWidgets(next);
+  },
+
+  mergeAll: async (data) => {
+    const incoming: AppData = { ...emptyData, ...data, goals: normalizeGoals(data.goals ?? []) };
+    const { data: merged, summary, orphanedCovers } = mergeData(snapshot(get), incoming);
+    await get().replaceAll(merged);
+    return { summary, orphanedCovers };
   },
 
   addBook: (result, status = 'want_to_read') => {
@@ -295,13 +406,13 @@ export const useStore = create<StoreState>((set, get) => ({
     return book;
   },
 
-  addImportedBooks: (items) => {
+  importBundle: (bundle) => {
     const state = get();
-    const shelfByName = new Map(state.shelves.map((s) => [s.name.toLowerCase(), s]));
+    const shelfByName = new Map(state.shelves.map((sh) => [sh.name.toLowerCase(), sh]));
     const newShelves: Shelf[] = [];
     const shelfIdFor = (name: string): string => {
-      const key = name.trim().toLowerCase();
-      let sh = shelfByName.get(key);
+      const k = name.trim().toLowerCase();
+      let sh = shelfByName.get(k);
       if (!sh) {
         sh = {
           id: uid('sh_'),
@@ -309,71 +420,109 @@ export const useStore = create<StoreState>((set, get) => ({
           color: SHELF_COLORS[(state.shelves.length + newShelves.length) % SHELF_COLORS.length],
           createdAt: Date.now(),
         };
-        shelfByName.set(key, sh);
+        shelfByName.set(k, sh);
         newShelves.push(sh);
       }
       return sh.id;
     };
-
-    // Match on ISBN *and* title|author: a book that exists with an ISBN must
-    // still be recognised when the CSV row lacks one. ISBNs compare through
-    // isbnKey, so an ISBN-10 in the CSV matches the library's ISBN-13.
     const keysOf = (b: { isbn?: string; title: string; authors: string[] }) => {
-      const keys = [
-        `t:${b.title.trim().toLowerCase()}|${(b.authors[0] ?? '').trim().toLowerCase()}`,
-      ];
+      const keys = [`t:${b.title.trim().toLowerCase()}|${(b.authors[0] ?? '').trim().toLowerCase()}`];
       const ik = isbnKey(b.isbn);
       if (ik) keys.push(`isbn:${ik}`);
       return keys;
     };
+    const idByKey = new Map<string, string>();
+    for (const b of state.books) for (const k of keysOf(b)) if (!idByKey.has(k)) idByKey.set(k, b.id);
 
-    const seen = new Set(state.books.flatMap(keysOf));
+    const bookIdFor = new Map<string, string>(); // bundle key -> library id
     const toAdd: Book[] = [];
-    let skipped = 0;
-
-    for (const it of items) {
-      if (!it.title?.trim()) {
-        skipped++;
-        continue;
-      }
+    let matched = 0;
+    for (const it of bundle.books) {
       const keys = keysOf(it);
-      if (keys.some((k) => seen.has(k))) {
-        skipped++;
+      // Different editions (both have ISBNs, and they differ) are separate books.
+      const ik = isbnKey(it.isbn);
+      const existing = keys
+        .map((k) => idByKey.get(k))
+        .find((id) => {
+          if (!id) return false;
+          const other = isbnKey(state.books.find((b) => b.id === id)?.isbn ?? toAdd.find((b) => b.id === id)?.isbn);
+          return !ik || !other || ik === other;
+        });
+      if (existing) {
+        bookIdFor.set(it.key, existing);
+        matched++;
         continue;
       }
-      keys.forEach((k) => seen.add(k));
       const now = Date.now();
-      toAdd.push({
+      const book: Book = {
         id: uid('b_'),
         title: it.title.trim(),
         authors: it.authors ?? [],
+        coverUrl: it.coverUrl,
         isbn: keepIsbn(it.isbn),
         pageCount: it.pageCount,
+        description: it.description,
+        publisher: it.publisher,
+        publishedDate: it.publishedDate,
+        language: it.language,
         status: it.status,
-        currentPage:
-          it.currentPage ?? (it.status === 'finished' && it.pageCount ? it.pageCount : 0),
+        currentPage: it.currentPage ?? (it.status === 'finished' && it.pageCount ? it.pageCount : 0),
         rating: it.rating,
         review: it.review,
         series: it.series,
         seriesNumber: it.seriesNumber,
         moods: it.moods,
         pace: it.pace,
-        publishedDate: it.publishedDate,
         addedAt: it.addedAt ?? now,
         startedAt: it.startedAt,
         finishedAt: it.finishedAt,
-        // Same rule as addBook: a finished book has been read once, unless the
-        // export says otherwise (Goodreads/StoryGraph "Read Count").
         readCount: it.readCount ?? (it.status === 'finished' ? 1 : undefined),
-        reads: it.reads,
-        shelfIds: (it.shelfNames ?? []).map(shelfIdFor),
+        reads: sanitizeReads(it.reads),
+        shelfIds: [...new Set((it.shelfNames ?? []).map(shelfIdFor))],
         source: 'import',
+      };
+      keys.forEach((k) => idByKey.set(k, book.id));
+      bookIdFor.set(it.key, book.id);
+      toAdd.push(book);
+    }
+
+    const noteKey = (bookId: string, text: string) => `${bookId}|${text.trim()}`;
+    const seenNotes = new Set(state.notes.map((n) => noteKey(n.bookId, n.text)));
+    const notes: BookNote[] = [];
+    for (const n of bundle.notes) {
+      const bookId = bookIdFor.get(n.bookKey);
+      if (!bookId || !n.text.trim() || seenNotes.has(noteKey(bookId, n.text))) continue;
+      seenNotes.add(noteKey(bookId, n.text));
+      notes.push({ id: uid('n_'), bookId, type: n.type, text: n.text.trim(), page: n.page, createdAt: n.createdAt });
+    }
+    const sessionKey = (bookId: string, t: number) => `${bookId}|${t}`;
+    const seenSessions = new Set(state.sessions.map((x) => sessionKey(x.bookId, x.startTime)));
+    const sessions: ReadingSession[] = [];
+    for (const x of bundle.sessions) {
+      const bookId = bookIdFor.get(x.bookKey);
+      if (!bookId || seenSessions.has(sessionKey(bookId, x.startTime))) continue;
+      seenSessions.add(sessionKey(bookId, x.startTime));
+      sessions.push({
+        id: uid('s_'),
+        bookId,
+        startTime: x.startTime,
+        endTime: x.endTime,
+        durationSeconds: Math.max(0, Math.round(x.durationSeconds)),
+        startPage: x.startPage,
+        endPage: x.endPage,
+        pagesRead: Math.max(0, Math.round(x.pagesRead)),
+        date: toDateKey(x.endTime || x.startTime),
       });
     }
 
-    set((s) => ({ books: [...toAdd, ...s.books], shelves: [...s.shelves, ...newShelves] }));
+    set((s) => ({
+      books: [...toAdd, ...s.books],
+      shelves: [...s.shelves, ...newShelves],
+      notes: [...notes, ...s.notes],
+      sessions: [...sessions, ...s.sessions],
+    }));
     persist(get);
-    return { added: toAdd.length, skipped, addedIds: toAdd.map((b) => b.id) };
+    return { added: toAdd.length, matched, notes: notes.length, sessions: sessions.length, addedIds: toAdd.map((b) => b.id) };
   },
 
   updateBook: (id, patch) => {
@@ -455,12 +604,15 @@ export const useStore = create<StoreState>((set, get) => ({
         if (b.status === status) return b;
         const patch: Partial<Book> = { status };
         if (status === 'reading' && !b.startedAt) patch.startedAt = Date.now();
+        // Giving up or shelving it again ends the reading plan.
+        if (status === 'dnf' || status === 'want_to_read') patch.plan = undefined;
         if (status === 'finished') {
           // A normal status correction must not count as a re-read. Only
           // startReread clears finishedAt, which marks a genuinely new cycle.
-          patch.finishedAt = b.finishedAt ?? Date.now();
+          // A book that already counted as read (e.g. imported "read" with no
+          // date) keeps its count and gets no invented finish date.
+          Object.assign(patch, finishFields(b, Date.now()));
           if (b.pageCount) patch.currentPage = b.pageCount;
-          if (!b.finishedAt) patch.readCount = (b.readCount ?? 0) + 1;
         }
         return { ...b, ...patch };
       }),
@@ -470,29 +622,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setProgress: (id, currentPage) => {
     set((s) => ({
-      books: s.books.map((b) => {
-        if (b.id !== id) return b;
-        const max = b.pageCount && b.pageCount > 0 ? b.pageCount : Infinity;
-        const page = Math.max(0, Math.min(currentPage, max));
-        const patch: Partial<Book> = { currentPage: page };
-        if (b.status === 'want_to_read' && page > 0) {
-          patch.status = 'reading';
-          patch.startedAt = b.startedAt ?? Date.now();
-        }
-        if (b.pageCount && page >= b.pageCount) {
-          patch.status = 'finished';
-          // startReread clears finishedAt; ordinary status corrections keep it.
-          // This makes only a genuinely new read cycle increase readCount.
-          patch.finishedAt = b.finishedAt ?? Date.now();
-          if (!b.finishedAt) patch.readCount = (b.readCount ?? 0) + 1;
-        } else if (b.status === 'finished' && b.pageCount && page < b.pageCount) {
-          // Moving a finished book back to an earlier page is a correction
-          // ("I hadn't actually finished"): it can't stay "finished at page
-          // 50 of 300". finishedAt/readCount are kept, like setStatus does.
-          patch.status = 'reading';
-        }
-        return { ...b, ...patch };
-      }),
+      books: s.books.map((b) => (b.id === id ? applyProgress(b, currentPage) : b)),
     }));
     persist(get);
   },
@@ -558,22 +688,29 @@ export const useStore = create<StoreState>((set, get) => ({
       // revisits. (For same-day sessions the two are identical.)
       date: toDateKey(input.endTime ?? input.startTime),
     };
-    set((s) => ({ sessions: [session, ...s.sessions] }));
-    // advance reading progress if the session recorded an end page - but only
-    // ever forward, so a mistyped lower "to page" can't regress the book.
-    if (input.endPage != null) {
-      const book = get().books.find((b) => b.id === input.bookId);
-      const target = book ? Math.max(book.currentPage, input.endPage) : input.endPage;
-      get().setProgress(input.bookId, target);
-    } else {
-      persist(get);
-    }
+    // One update for the session and the book it advances: a second set would
+    // re-render every subscriber (and re-run stampChanges) twice.
+    set((s) => {
+      const sessions = [session, ...s.sessions];
+      // advance reading progress if the session recorded an end page - but only
+      // ever forward, so a mistyped lower "to page" can't regress the book.
+      const endPage = input.endPage;
+      if (endPage == null) return { sessions };
+      return {
+        sessions,
+        books: s.books.map((b) =>
+          b.id === input.bookId ? applyProgress(b, Math.max(b.currentPage, endPage)) : b
+        ),
+      };
+    });
+    persist(get);
     return session;
   },
 
   updateSession: (id, patch) => {
-    set((s) => ({
-      sessions: s.sessions.map((x) => {
+    set((s) => {
+      let bookId: string | undefined;
+      const sessions = s.sessions.map((x) => {
         if (x.id !== id) return x;
         const next = { ...x, ...patch };
         // Keep the day bucket in sync with the (possibly edited) times - end
@@ -581,17 +718,21 @@ export const useStore = create<StoreState>((set, get) => ({
         if (patch.startTime != null || patch.endTime != null) {
           next.date = toDateKey(next.endTime ?? next.startTime);
         }
+        if (bookId === undefined) bookId = next.bookId;
         return next;
-      }),
-    }));
-    // keep book progress in sync if the end page changed (forward only)
-    const sess = get().sessions.find((x) => x.id === id);
-    if (sess && patch.endPage != null) {
-      const book = get().books.find((b) => b.id === sess.bookId);
-      get().setProgress(sess.bookId, book ? Math.max(book.currentPage, patch.endPage) : patch.endPage);
-    } else {
-      persist(get);
-    }
+      });
+      // keep book progress in sync if the end page changed (forward only),
+      // in the same update as the session
+      const endPage = patch.endPage;
+      if (bookId == null || endPage == null) return { sessions };
+      return {
+        sessions,
+        books: s.books.map((b) =>
+          b.id === bookId ? applyProgress(b, Math.max(b.currentPage, endPage)) : b
+        ),
+      };
+    });
+    persist(get);
   },
 
   deleteSession: (id) => {
@@ -662,35 +803,42 @@ export const useStore = create<StoreState>((set, get) => ({
   deleteShelf: (id) => {
     set((s) => ({
       shelves: s.shelves.filter((sh) => sh.id !== id),
-      books: s.books.map((b) => ({
-        ...b,
-        shelfIds: b.shelfIds.filter((x) => x !== id),
-      })),
+      // Only the books on that shelf change (a new object stamps updatedAt,
+      // which would make every book win the next backup merge).
+      books: s.books.map((b) => (b.shelfIds.includes(id) ? { ...b, shelfIds: b.shelfIds.filter((x) => x !== id) } : b)),
     }));
     persist(get);
   },
 
-  setGoal: (type, target) => {
-    const year = new Date().getFullYear();
-    // Only books_per_year is scoped to a year; daily goals carry over across years.
-    const existing = get().goals.find(
-      (g) => g.type === type && (type === 'books_per_year' ? g.year === year : true)
-    );
-    if (existing) {
-      set((s) => ({
-        goals: s.goals.map((g) => (g.id === existing.id ? { ...g, target } : g)),
-      }));
-      persist(get);
-      return { ...existing, target };
-    }
+  saveGoal: (input) => {
+    const custom = input.period === 'custom';
+    const existing = input.id
+      ? get().goals.find((g) => g.id === input.id)
+      : custom
+      ? undefined
+      : get().goals.find((g) => g.metric === input.metric && g.period === input.period);
     const goal: Goal = {
-      id: uid('g_'),
-      type,
-      target,
-      year,
-      createdAt: Date.now(),
+      id: existing?.id ?? uid('g_'),
+      metric: input.metric,
+      period: input.period,
+      target: Math.max(1, Math.round(input.target)),
+      createdAt: existing?.createdAt ?? Date.now(),
     };
-    set((s) => ({ goals: [...s.goals, goal] }));
+    if (custom) {
+      goal.start = input.start;
+      goal.end = input.end;
+      if (input.name?.trim()) goal.name = input.name.trim();
+    }
+    // Written for older app versions reading a backup: they know only these
+    // three kinds, and "books per year" only for the year it names.
+    const type = legacyTypeOf(goal.metric, goal.period);
+    if (type) {
+      goal.type = type;
+      goal.year = new Date().getFullYear();
+    }
+    set((s) => ({
+      goals: existing ? s.goals.map((g) => (g.id === existing.id ? goal : g)) : [...s.goals, goal],
+    }));
     persist(get);
     return goal;
   },
@@ -699,7 +847,8 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({ goals: s.goals.filter((g) => g.id !== id) }));
     persist(get);
   },
-}));
+  };
+});
 
 // Selectors / helpers
 export function useBook(id: string | undefined): Book | undefined {
@@ -718,7 +867,10 @@ export function findExistingBook(
   const titleKey = `${b.title.trim().toLowerCase()}|${(b.authors?.[0] ?? '').trim().toLowerCase()}`;
   const ik = isbnKey(b.isbn);
   return books.find((x) => {
-    if (ik && isbnKey(x.isbn) === ik) return true;
+    const xk = isbnKey(x.isbn);
+    if (ik && xk === ik) return true;
+    // Same title and author but a different ISBN: another edition.
+    if (ik && xk && ik !== xk) return false;
     return (
       `${x.title.trim().toLowerCase()}|${(x.authors[0] ?? '').trim().toLowerCase()}` === titleKey
     );

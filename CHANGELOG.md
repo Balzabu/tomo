@@ -1,0 +1,58 @@
+# Changelog
+
+User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
+
+## 1.4.0 (unreleased)
+
+### What's new
+
+**Goals and statistics**
+- Goals per day, month or year, in books, pages or minutes, plus challenges with their own start and end date. Each goal shows whether you're ahead of or behind schedule and what's left per day.
+- New statistics: this year against last year to the same day, when you read (time of day and weekday), rating distribution, most-read authors, moods and pace.
+- The to-read pile: how many books and pages are waiting, when you'd clear it at your pace, and its "tsundoku index". Shareable as a card.
+
+**Reading**
+- Reading plan: pick a deadline for a book and Tomo gives you each day's page quota and tells you whether you're on track.
+- Reading curve on every book: pages reached over time, with the plan drawn alongside.
+- Reading memory: when you finish a book, a card with dates, days, pages, time, rating, the reading curve and a favourite quote, ready to share.
+- Notes and quotes in one place: a screen with every note and quote in the library, searchable and grouped by book.
+- Capture a quote or a note during a reading session, from the timer or straight from the session notification, without stopping the clock.
+
+**Home screen**
+- New "Quote of the day" widget: one of your saved quotes each day, with its book and cover; tap ⇄ for another.
+- The Reading widget shows today's reading-plan quota and can switch between the books you're reading.
+
+**Reminders**
+- Smarter reminders: they can skip the days you've already read, name the book you're in, and remind you when your streak is at stake.
+
+**Backups and imports**
+- Automatic backups into a folder you pick, daily or weekly, keeping as many as you choose.
+- Restoring a backup can merge it with what's on the phone, keeping the most recent copy of everything, instead of replacing it. Before a merge removes books that were deleted on the other device, Tomo lists them and asks.
+- Import from Bookmory (database or Excel export, with reads, timed sessions and notes) and Openreads (backup or CSV), besides Goodreads and StoryGraph.
+- Share an export file to Tomo straight from another app.
+
+**Privacy and security**
+- App lock with a PIN and, optionally, fingerprint or face unlock.
+- While the lock is on, Tomo can be blanked in the recent-apps screen, and widgets and notifications can hide titles, quotes and progress ("Hide content in widgets and notifications").
+- Links from widgets, notifications and other apps wait for the PIN: nothing starts (not even a reading session) until the app is unlocked.
+- Wrong PINs are throttled with growing pauses, and changing the phone's clock doesn't get around them.
+
+**Looks**
+- Material You: a theme with colours from your wallpaper (Android 12 and later).
+- Redesigned share images for books, quotes, reading memories, the to-read pile and the year in books: four styles (minimal, gradient, cover and paper), square and story formats, and the year in books shows the covers of the year's books.
+- Redesigned dialogs, date and time pickers, note editor and settings screens.
+
+### Fixes
+
+- A reading session no longer lands on the wrong day when it is paused across midnight, and a timer left running overnight asks how much of that time to count.
+- Tapping "Add quote" or "Finish" on the session notification a second time now works.
+- A reading session could start by itself when Android reopened Tomo from the recent-apps screen after closing it in the background.
+- Deleting one of two copies of a book no longer removes the other copy on the next merge, and different editions of a book stay separate.
+- Two sessions added by hand on the same day are no longer merged into one when restoring a backup.
+- Re-reading a book imported without a read date now counts the new read.
+- Editing a book no longer overwrites details filled in meanwhile by the automatic catalogue lookup.
+- Book descriptions from the catalogues no longer show HTML codes such as `&#39;`.
+- Dialogs dim the screen in the theme's own colours instead of turning it greenish.
+- Faster: saving writes only what changed instead of the whole library, widgets refresh faster, and large libraries scroll and search more smoothly.
+
+Install the APK below (Android 7.0+). It installs over v1.3.4.
