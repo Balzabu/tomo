@@ -71,7 +71,7 @@ export function PlanBox({ book, sessions }: { book: Book; sessions: ReadingSessi
   const quotaDone = p.todayTarget > 0 && p.todayRead >= p.todayTarget;
   const tone =
     p.status === 'done' || p.status === 'ahead' ? t.colors.success : p.status === 'behind' || p.status === 'overdue' ? t.colors.star : t.colors.primary;
-  const unit = (n: number) => (n === 1 ? tr('unit.page') : tr('unit.pages'));
+  const unit = (n: number) => tr('unit.pages', { n });
   const statusText =
     p.status === 'done'
       ? tr('plan.done')

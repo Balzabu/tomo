@@ -49,35 +49,35 @@
       </intent-filter>
     </activity>
     <activity android:name="com.canhub.cropper.CropImageActivity" android:exported="false" tools:replace="android:exported"/>
-    <receiver android:name=".widget.CurrentlyReading" android:exported="false" android:label="Tomo · Reading">
+    <receiver android:name=".widget.CurrentlyReading" android:exported="false" android:label="@string/tomo_widget_currentlyreading_label">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
         <action android:name="io.balzabu.tomo.WIDGET_CLICK"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_currentlyreading"/>
     </receiver>
-    <receiver android:name=".widget.QuickStart" android:exported="false" android:label="Tomo · Start session">
+    <receiver android:name=".widget.QuickStart" android:exported="false" android:label="@string/tomo_widget_quickstart_label">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
         <action android:name="io.balzabu.tomo.WIDGET_CLICK"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_quickstart"/>
     </receiver>
-    <receiver android:name=".widget.StreakGoal" android:exported="false" android:label="Tomo · Streak &amp; goal">
+    <receiver android:name=".widget.StreakGoal" android:exported="false" android:label="@string/tomo_widget_streakgoal_label">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
         <action android:name="io.balzabu.tomo.WIDGET_CLICK"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_streakgoal"/>
     </receiver>
-    <receiver android:name=".widget.Heatmap" android:exported="false" android:label="Tomo · Calendar">
+    <receiver android:name=".widget.Heatmap" android:exported="false" android:label="@string/tomo_widget_heatmap_label">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
         <action android:name="io.balzabu.tomo.WIDGET_CLICK"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_heatmap"/>
     </receiver>
-    <receiver android:name=".widget.Quote" android:exported="false" android:label="Tomo · Quote of the day">
+    <receiver android:name=".widget.Quote" android:exported="false" android:label="@string/tomo_widget_quote_label">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
         <action android:name="io.balzabu.tomo.WIDGET_CLICK"/>

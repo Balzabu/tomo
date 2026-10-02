@@ -4,7 +4,10 @@ import Svg, {
   Defs,
   G,
   Line,
+  Path,
+  Polygon,
   Rect,
+  Text as SvgText,
 } from 'react-native-svg';
 import { Language } from '@/store/useSettings';
 
@@ -85,6 +88,76 @@ function renderFlag(code: Language) {
           <Rect x={12} y={0} width={18} height={H} fill="#FF0000" />
           <Circle cx={12} cy={H / 2} r={3.4} fill="#FFD700" />
           <Circle cx={12} cy={H / 2} r={1.6} fill="#FF0000" />
+        </>
+      );
+    case 'pt-BR':
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H} fill="#009B3A" />
+          <Polygon points={`3,${H / 2} ${W / 2},2.2 ${W - 3},${H / 2} ${W / 2},${H - 2.2}`} fill="#FEDF00" />
+          <Circle cx={W / 2} cy={H / 2} r={4.4} fill="#002776" />
+          <Path d={`M ${W / 2 - 4.3} ${H / 2 - 0.6} Q ${W / 2} ${H / 2 - 2.2} ${W / 2 + 4.3} ${H / 2 + 0.9}`} stroke="#ffffff" strokeWidth={0.9} fill="none" />
+        </>
+      );
+    case 'nl':
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H / 3} fill="#AE1C28" />
+          <Rect x={0} y={H / 3} width={W} height={H / 3} fill="#ffffff" />
+          <Rect x={0} y={(2 * H) / 3} width={W} height={H / 3} fill="#21468B" />
+        </>
+      );
+    case 'pl':
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H / 2} fill="#ffffff" />
+          <Rect x={0} y={H / 2} width={W} height={H / 2} fill="#DC143C" />
+        </>
+      );
+    case 'ja':
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H} fill="#ffffff" />
+          <Circle cx={W / 2} cy={H / 2} r={6} fill="#BC002D" />
+        </>
+      );
+    case 'ko': {
+      // Taegeuk plus the four trigrams, simplified.
+      const cx = W / 2;
+      const cy = H / 2;
+      const r = 4.6;
+      const bars = (x: number, y: number, angle: number) => (
+        <G transform={`rotate(${angle} ${x} ${y})`}>
+          {[-1.3, 0, 1.3].map((d) => (
+            <Line key={d} x1={x - 2} y1={y + d} x2={x + 2} y2={y + d} stroke="#000000" strokeWidth={0.8} />
+          ))}
+        </G>
+      );
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H} fill="#ffffff" />
+          <G transform={`rotate(33.7 ${cx} ${cy})`}>
+            <Path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy} Z`} fill="#CD2E3A" />
+            <Path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 0 ${cx + r} ${cy} Z`} fill="#0047A0" />
+            <Circle cx={cx - r / 2} cy={cy} r={r / 2} fill="#CD2E3A" />
+            <Circle cx={cx + r / 2} cy={cy} r={r / 2} fill="#0047A0" />
+          </G>
+          {bars(5.5, 4.2, -56.3)}
+          {bars(W - 5.5, H - 4.2, -56.3)}
+          {bars(W - 5.5, 4.2, 56.3)}
+          {bars(5.5, H - 4.2, 56.3)}
+        </>
+      );
+    }
+    case 'zh-Hant':
+      // A script badge rather than a national flag: Traditional Chinese is
+      // read in several places.
+      return (
+        <>
+          <Rect x={0} y={0} width={W} height={H} fill="#8B1E2D" />
+          <SvgText x={W / 2} y={H / 2 + 4.6} fontSize={13} fontWeight="700" fill="#ffffff" textAnchor="middle">
+            繁
+          </SvgText>
         </>
       );
     case 'en':

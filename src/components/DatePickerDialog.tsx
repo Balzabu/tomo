@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { Dialog } from '@/components/Dialog';
 import { Button } from '@/components/ui';
 import { onColor, spacing, useTheme } from '@/theme/theme';
-import { monthsLong, useTranslation, weekdayInitials } from '@/i18n';
+import { formatDateKey, monthYear, useTranslation, weekdayInitials } from '@/i18n';
 
 import { toDateKey } from '@/lib/utils';
 
@@ -66,7 +66,7 @@ export function DatePickerDialog({ visible, title, value, min, max, onPick, onCl
           <Ionicons name="chevron-back" size={22} color={t.colors.text} />
         </Pressable>
         <Text style={[styles.month, { color: t.colors.text }]}>
-          {monthsLong[lang][cursor.m]} {cursor.y}
+          {monthYear(cursor.y, cursor.m, lang, true)}
         </Text>
         <Pressable onPress={() => shift(1)} hitSlop={10} accessibilityRole="button" accessibilityLabel={tr('date.nextMonth')}>
           <Ionicons name="chevron-forward" size={22} color={t.colors.text} />
@@ -97,7 +97,7 @@ export function DatePickerDialog({ visible, title, value, min, max, onPick, onCl
               }}
               accessibilityRole="button"
               accessibilityState={{ selected, disabled }}
-              accessibilityLabel={`${d} ${monthsLong[lang][cursor.m]} ${cursor.y}`}
+              accessibilityLabel={formatDateKey(key, lang)}
             >
               <View
                 style={[

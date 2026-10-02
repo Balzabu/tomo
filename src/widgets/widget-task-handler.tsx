@@ -4,6 +4,7 @@ import type { WidgetRepresentation, WidgetTaskHandlerProps } from 'react-native-
 import { computeStats, buildHeatmap, dailyTotals } from '@/lib/stats';
 import { goalProgress, normalizeGoals } from '@/lib/goals';
 import { monthsShort, weekdayInitials } from '@/i18n/strings';
+import { labelValue, numUnitSep } from '@/i18n';
 import { migrateLegacyKeys } from '@/lib/migrate';
 import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
@@ -173,16 +174,21 @@ async function prepareWidget(
         goals.find((g) => g.period === 'day' && g.metric === 'minutes') ??
         goals.find((g) => g.period === 'day' && g.metric === 'pages');
 
+      const todayMinutes = Math.round(todaySeconds(data) / 60);
+      const sep = numUnitSep(lang);
       const sg: StreakGoalData = {
         streak,
-        todayMinutes: Math.round(todaySeconds(data) / 60),
+        todayMinutes,
+        todayText: labelValue(lang, t('widget.today'), `${todayMinutes}${sep}${t('unit.min')}`),
       };
       if (dailyGoal) {
         const prog = goalProgress(dailyGoal, data.books, data.sessions);
+        const unit = dailyGoal.metric === 'minutes' ? t('unit.min') : t('unit.pages', { n: dailyGoal.target });
         sg.goal = {
           current: prog.current,
           target: dailyGoal.target,
-          unit: dailyGoal.metric === 'minutes' ? t('unit.min') : t('unit.pages'),
+          unit,
+          progressText: `${prog.current}/${dailyGoal.target}${sep}${unit}`,
         };
       }
 

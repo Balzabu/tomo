@@ -146,7 +146,7 @@ export function PrivateWidget({ theme, t }: { theme: Theme; t: (k: string) => st
       >
         <IconWidget icon={'\uf3c7'} font={ICON_FONT} size={20} style={{ color: hx(c.primary) }} />
       </FlexWidget>
-      <TextWidget text={t('widget.private')} maxLines={2} style={{ color: hx(c.textMuted), fontSize: 13, fontWeight: '600', marginTop: 8, textAlign: 'center' }} />
+      <TextWidget text={t('widget.private').replace(/\s*[·・]\s*/, '\n')} maxLines={2} style={{ color: hx(c.textMuted), fontSize: 13, fontWeight: '600', marginTop: 8, textAlign: 'center' }} />
     </FlexWidget>
   );
 }

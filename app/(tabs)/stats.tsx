@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
-import { useTranslation, localizedWeekdaysShort, durationUnits, formatInt } from '@/i18n';
+import { useTranslation, localizedWeekdaysShort, durationUnits, formatInt, numUnitSep } from '@/i18n';
 import { buildHeatmap, computeInsights, computeStats, dailyTotals, latestWrappedYear, recentDailyPages } from '@/lib/stats';
 import { BarChart, Heatmap, StatTile } from '@/components/charts';
 import { Button, Card, EmptyState, SectionTitle } from '@/components/ui';
@@ -38,7 +38,7 @@ export default function StatsScreen() {
   const daily = useMemo(() => dailyTotals(sessions), [sessions]);
   const heat = useMemo(() => buildHeatmap(daily, 17), [daily, todayKey]);
   const monthDelta = insights.pagesThisMonth - insights.pagesLastMonth;
-  const monthTrend = monthDelta > 0 ? ` ↑${monthDelta}` : monthDelta < 0 ? ` ↓${-monthDelta}` : '';
+  const monthTrend = monthDelta > 0 ? ` ↑${formatInt(monthDelta, lang)}` : monthDelta < 0 ? ` ↓${formatInt(-monthDelta, lang)}` : '';
   const wrappedReady = useMemo(
     () => latestWrappedYear(books, sessions) != null,
     [books, sessions, todayKey]
@@ -154,14 +154,14 @@ export default function StatsScreen() {
           {insights.pagesThisMonth > 0 || insights.pagesLastMonth > 0 ? (
             <Row
               label={tr('stats.thisMonth')}
-              value={`${insights.pagesThisMonth} ${tr('unit.pages')}${monthTrend}`}
+              value={`${formatInt(insights.pagesThisMonth, lang)}${numUnitSep(lang)}${tr('unit.pages', { n: insights.pagesThisMonth })}${monthTrend}`}
               t={t}
             />
           ) : null}
           {insights.fastestBook ? (
             <Row
               label={tr('stats.fastestBook')}
-              value={`${insights.fastestBook.pagesPerHour} ${tr('stats.pagesPerHour')}`}
+              value={tr('stats.pagesPerHourValue', { n: insights.fastestBook.pagesPerHour })}
               sub={insights.fastestBook.title}
               t={t}
             />

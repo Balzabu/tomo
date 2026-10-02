@@ -451,7 +451,7 @@ export default function LibraryScreen() {
           <Text style={[styles.selectCount, { color: t.colors.text }]}>
             {tr('select.selected', { n: selected.size })}
           </Text>
-          <Pressable onPress={toggleAll} hitSlop={8} style={styles.selectBtn}>
+          <Pressable onPress={toggleAll} hitSlop={8} style={[styles.selectBtn, styles.selectAll]}>
             <Ionicons
               name={allSelected ? 'checkbox' : 'checkbox-outline'}
               size={20}
@@ -694,6 +694,7 @@ const styles = StyleSheet.create({
   filterChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   selectBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   selectCount: { flex: 1, fontSize: 15, fontWeight: '700' },
+  selectAll: { marginRight: spacing.lg },
   selectAllTxt: { fontSize: 15, fontWeight: '700' },
   selectDelete: { fontSize: 15, fontWeight: '700' },
   backdrop: { flex: 1, justifyContent: 'flex-end' },

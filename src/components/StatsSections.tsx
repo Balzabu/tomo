@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Book, BookNote, ReadingSession } from '@/types';
 import { spacing, useTheme } from '@/theme/theme';
-import { durationUnits, formatDateKey, formatInt, formatMonthYear, localizedWeekdaysShort, useTranslation } from '@/i18n';
+import { durationUnits, formatDateKey, formatInt, formatMonthYear, labelValue, localizedWeekdaysShort, numUnitSep, useTranslation } from '@/i18n';
 import { BarChart, HBarList } from '@/components/charts';
 import { Card, Pill, SectionTitle } from '@/components/ui';
 import { Segmented } from '@/components/Segmented';
@@ -46,7 +46,7 @@ export function YearCompareCard({ books, sessions, today }: { books: Book[]; ses
     <Card style={{ gap: spacing.sm }}>
       <SectionTitle>{tr('stats.yoyTitle', { a: current.year, b: previous.year })}</SectionTitle>
       <Text style={[styles.caption, { color: t.colors.textFaint }]}>
-        {tr('stats.yoySub', { date: formatDateKey(today, lang).replace(/ \d{4}$/, '') })}
+        {tr('stats.yoySub', { date: formatDateKey(today, lang, false) })}
       </Text>
       <View style={styles.yoyHead}>
         <View style={{ flex: 1 }} />
@@ -163,7 +163,7 @@ export function AuthorsCard({ books }: { books: Book[] }) {
         rows={list.map((a) => ({
           key: a.name,
           label: a.name,
-          sub: a.pages > 0 ? `${formatInt(a.pages, lang)} ${tr('unit.pages')}` : undefined,
+          sub: a.pages > 0 ? `${formatInt(a.pages, lang)}${numUnitSep(lang)}${tr('unit.pages', { n: a.pages })}` : undefined,
           value: a.books,
           display: String(a.books),
         }))}
@@ -195,7 +195,7 @@ export function MoodPaceCard({ books }: { books: Book[] }) {
             key: p,
             label: tr(`pace.${p}`),
             value: mp.pace[p],
-            display: `${Math.round((mp.pace[p] / paced) * 100)}%`,
+            display: tr('common.percent', { n: Math.round((mp.pace[p] / paced) * 100) }),
           }))}
         />
       ) : null}
@@ -213,6 +213,7 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
   const f = useMemo(() => tbrForecast(books, today), [books, today]);
   if (f.count === 0 && f.perMonth === 0) return null;
   const monthYear = (key: string) => formatMonthYear(key, lang);
+  const sep = numUnitSep(lang);
   const years = f.index != null ? fmt1(f.index, lang) : '–';
   const level = `${LEVEL_EMOJI[f.level]} ${tr(`tbr.level.${f.level}`)}`;
   const pace = tr('tbr.pace', { n: fmt1(f.perMonth, lang) });
@@ -237,17 +238,17 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
           <View style={styles.tbrTop}>
             <View style={styles.tbrStat}>
               <Text style={[styles.big, { color: t.colors.text }]}>{formatInt(f.count, lang)}</Text>
-              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.books')}</Text>
+              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.books', { n: f.count })}</Text>
             </View>
             {f.pages > 0 ? (
               <View style={styles.tbrStat}>
                 <Text style={[styles.big, { color: t.colors.text }]}>{formatInt(f.pages, lang)}</Text>
-                <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.pages')}</Text>
+                <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.pages', { n: f.pages })}</Text>
               </View>
             ) : null}
             <View style={styles.tbrStat}>
               <Text style={[styles.big, { color: t.colors.primary }]}>{years}</Text>
-              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.index')}</Text>
+              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.index', { n: years })}</Text>
             </View>
           </View>
           <Text style={[styles.takeaway, { color: t.colors.text }]}>
@@ -266,8 +267,8 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
           // Two tiles + detail rows: the square format has room for one tile row
           // under a two-line heading.
           tiles: [
-            { label: tr('tbr.books'), value: formatInt(f.count, lang) },
-            { label: tr('tbr.index'), value: years },
+            { label: tr('tbr.books', { n: f.count }), value: formatInt(f.count, lang) },
+            { label: tr('tbr.index', { n: years }), value: years },
           ],
           highlights: [
             ...(f.pages > 0 ? [{ label: tr('tbr.pagesLabel'), value: formatInt(f.pages, lang) }] : []),
@@ -278,9 +279,9 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
         }}
         text={[
           `📚 ${tr('tbr.cardTitle')}`,
-          `${formatInt(f.count, lang)} ${tr('tbr.books')}${f.pages ? ` · ${formatInt(f.pages, lang)} ${tr('tbr.pages')}` : ''}`,
-          f.clearDate ? `${tr('tbr.clearBy')}: ${monthYear(f.clearDate)}` : '',
-          `${tr('tbr.index')}: ${years} · ${level}`,
+          `${formatInt(f.count, lang)}${sep}${tr('tbr.books', { n: f.count })}${f.pages ? ` · ${formatInt(f.pages, lang)}${sep}${tr('tbr.pages', { n: f.pages })}` : ''}`,
+          f.clearDate ? labelValue(lang, tr('tbr.clearBy'), monthYear(f.clearDate)) : '',
+          `${labelValue(lang, tr('tbr.index'), years)} · ${level}`,
         ]
           .filter(Boolean)
           .join('\n')}

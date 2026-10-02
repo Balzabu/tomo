@@ -22,7 +22,11 @@ export interface StreakGoalData {
     target: number;
     /** Localised unit, e.g. "min" or "pagine". */
     unit: string;
+    /** "12/25 pagine" with the language's number-unit spacing. */
+    progressText: string;
   };
+  /** "Oggi: 12 min" with the language's colon and spacing. */
+  todayText: string;
 }
 
 interface Props {
@@ -112,13 +116,13 @@ export function StreakGoalWidget({ theme, t, size, data }: Props) {
         <Icon glyph={ICON.checkmark} size={Math.round(ring * (small ? 0.42 : 0.3))} color={c.success} />
       ) : (
         <TextWidget
-          text={`${pct}%`}
+          text={t('common.percent', { n: pct })}
           style={{ color: hx(c.text), fontSize: Math.round(ring * (small ? 0.27 : 0.22)), fontWeight: '800' }}
         />
       )}
       {!small ? (
         <TextWidget
-          text={`${goal.current}/${goal.target} ${goal.unit}`}
+          text={goal.progressText}
           maxLines={1}
           style={{
             color: hx(c.textMuted),
@@ -137,7 +141,7 @@ export function StreakGoalWidget({ theme, t, size, data }: Props) {
       />
       {!small ? (
         <TextWidget
-          text={t('widget.streakDays')}
+          text={t('widget.streakDays', { n: streak })}
           maxLines={1}
           style={{
             color: hx(c.textMuted),
@@ -157,7 +161,7 @@ export function StreakGoalWidget({ theme, t, size, data }: Props) {
       <Icon glyph={ICON.checkmark} size={Math.round(r * 0.42)} color={c.success} />
     ) : goal ? (
       <TextWidget
-        text={`${pct}%`}
+        text={t('common.percent', { n: pct })}
         style={{ color: hx(c.text), fontSize: Math.round(r * 0.26), fontWeight: '800' }}
       />
     ) : (
@@ -193,7 +197,7 @@ export function StreakGoalWidget({ theme, t, size, data }: Props) {
             style={{ color: hx(c.text), fontSize: 20, fontWeight: '800' }}
           />
           <TextWidget
-            text={goal ? goal.unit : t('widget.streakDays')}
+            text={goal ? goal.unit : t('widget.streakDays', { n: streak })}
             maxLines={1}
             style={{ color: hx(c.textMuted), fontSize: 12, fontWeight: '600' }}
           />
@@ -239,7 +243,7 @@ export function StreakGoalWidget({ theme, t, size, data }: Props) {
           streakPill
         ) : (
           <TextWidget
-            text={`${t('widget.today')}: ${data.todayMinutes} ${t('unit.min')}`}
+            text={data.todayText}
             maxLines={1}
             style={{ color: hx(c.textMuted), fontSize: 12, fontWeight: '600', marginTop: 8 }}
           />

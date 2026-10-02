@@ -32,7 +32,7 @@ It is built with Expo (React Native and TypeScript). Book data comes from Google
 - App lock with a PIN and, optionally, fingerprint or face unlock. While locked, the app can be blanked in the recent-apps switcher, widgets and notifications can hide titles, quotes and progress, and links from widgets, notifications or other apps wait for the PIN. Wrong PINs are throttled, and changing the phone's clock doesn't get around it.
 - Home-screen widgets: currently reading (with today's reading-plan quota, switching between the books you're reading), quick-start a session, streak and goal, reading calendar, and a quote of the day. All resizable, laid out for their actual size, and following the system light/dark mode.
 - 16 light and dark colour themes, plus Material You (colours from your wallpaper) on Android 12 and later.
-- Six languages: Italian, English, Spanish, French, German, Portuguese, following the system language by default.
+- Twelve languages: Italian, English, Spanish, French, German, Portuguese (Portugal and Brazil), Dutch, Polish, Japanese, Korean and Traditional Chinese, following the system language by default.
 - All data stays local: no account, no ads, no analytics, no tracking.
 
 ## Install
@@ -70,7 +70,7 @@ For both reasons, Tomo is distributed straight from GitHub [Releases](https://gi
 - A small local Expo module (`modules/tomo-system`, Kotlin) for Material You colours, hiding the app in Recents, receiving shared files, and a monotonic clock for the app lock.
 - Expo config plugins in `plugins/` for what the managed config can't express: the share target, widget provider extras, and Android hardening (no cloud backup or device-to-device transfer, non-exported third-party activities, no replay of a stale launch intent).
 - patch-package patches in `patches/` (react-native-android-widget: the widget image provider only serves the launcher, widget links stay inside Tomo, system fonts in widgets, and a cold-start fix so widgets don't stay blank).
-- expo-localization with a small custom dictionary for the six languages.
+- expo-localization with a small custom dictionary (with plural variants) for the twelve languages.
 - Gradle build, Hermes engine, New Architecture enabled.
 
 ## Development
@@ -135,7 +135,7 @@ src/
   lib/                   # storage, stats, goals, plans, backup/merge, imports, notifications, utils
   components/            # reusable UI (covers, charts, heatmap)
   theme/                 # colour schemes and spacing
-  i18n/                  # translations (6 languages)
+  i18n/                  # translations (12 languages)
   widgets/               # home-screen widget rendering
 modules/tomo-system/     # local native module (dynamic colours, Recents, share target, monotonic clock)
 plugins/                 # Expo config plugins (share target, widgets, Android hardening)

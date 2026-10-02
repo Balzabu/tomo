@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SchemeChoice } from '@/theme/theme';
+import { LANGS, type Lang } from '@/i18n/strings';
 import { LIBRARY_SORTS, LibraryFilter, LibrarySort, ReadingStatus, STATUS_ORDER } from '@/types';
 
-export type Language = 'system' | 'it' | 'en' | 'es' | 'fr' | 'de' | 'pt';
+export type Language = 'system' | Lang;
 
-export const LANGUAGES: Language[] = ['system', 'it', 'en', 'es', 'fr', 'de', 'pt'];
+export const LANGUAGES: Language[] = ['system', ...LANGS];
 
 interface SettingsState {
   hydrated: boolean;
@@ -77,7 +78,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
         const p = JSON.parse(raw) as Partial<Persisted>;
         set({
           scheme: p.scheme ?? 'system',
-          language: p.language ?? 'system',
+          language: LANGUAGES.includes(p.language as Language) ? (p.language as Language) : 'system',
           reminderEnabled: p.reminderEnabled ?? false,
           reminderHour: p.reminderHour ?? 20,
           reminderMinute: p.reminderMinute ?? 0,

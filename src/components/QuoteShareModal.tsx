@@ -43,7 +43,7 @@ export function QuoteShareModal({ visible, quote, title, author, page, coverUrl,
 
   const shareAsText = () => {
     const attribution = [title, author].filter(Boolean).join(' — ');
-    const pageStr = page != null ? ` (${tr('common.pageAbbr')} ${page})` : '';
+    const pageStr = page != null ? ` (${tr('common.pageNum', { n: page })})` : '';
     void shareText(`“${quote ?? ''}”\n— ${attribution}${pageStr}\n\n${tr('share.fromTomo')}`);
   };
 
@@ -76,7 +76,7 @@ export function QuoteShareModal({ visible, quote, title, author, page, coverUrl,
             title,
             author,
             page,
-            pageAbbr: tr('common.pageAbbr'),
+            pageLabel: page != null ? tr('common.pageNum', { n: page }) : undefined,
             coverUrl,
           }}
         />

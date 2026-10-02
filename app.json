@@ -71,6 +71,7 @@
       "./plugins/withAndroidLintFix",
       "./plugins/withShareTarget",
       "./plugins/withPrivacyHardening",
+      "./plugins/withWidgetLabels",
       [
         "./plugins/withWidgetProviderExtras",
         {
@@ -187,7 +188,13 @@
       "es": "./locales/es.json",
       "fr": "./locales/fr.json",
       "de": "./locales/de.json",
-      "pt": "./locales/pt.json"
+      "pt": "./locales/pt.json",
+      "pt-BR": "./locales/pt-BR.json",
+      "nl": "./locales/nl.json",
+      "pl": "./locales/pl.json",
+      "ja": "./locales/ja.json",
+      "ko": "./locales/ko.json",
+      "zh-Hant": "./locales/zh-Hant.json"
     },
     "experiments": {
       "typedRoutes": true

@@ -1,0 +1,4 @@
+<resources>
+  <string name="NSCameraUsageDescription">"Tomo 會使用相機掃描書籍條碼（ISBN）。"</string>
+  <string name="NSPhotoLibraryUsageDescription">"Tomo 會存取你的照片，讓你選擇書籍封面。"</string>
+</resources>

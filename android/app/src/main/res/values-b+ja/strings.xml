@@ -1,0 +1,4 @@
+<resources>
+  <string name="NSCameraUsageDescription">"本のバーコード（ISBN）を読み取るためにカメラを使用します。"</string>
+  <string name="NSPhotoLibraryUsageDescription">"本の表紙を選ぶために写真へのアクセスを使用します。"</string>
+</resources>

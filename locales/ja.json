@@ -1,0 +1,4 @@
+{
+  "NSCameraUsageDescription": "本のバーコード（ISBN）を読み取るためにカメラを使用します。",
+  "NSPhotoLibraryUsageDescription": "本の表紙を選ぶために写真へのアクセスを使用します。"
+}

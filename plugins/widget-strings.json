@@ -1,0 +1,266 @@
+{
+  "en": {
+    "CurrentlyReading": {
+      "label": "Tomo · Reading",
+      "description": "The book you’re reading, with progress and stats"
+    },
+    "QuickStart": {
+      "label": "Tomo · Start session",
+      "description": "Start a reading session by picking a book"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Streak & goal",
+      "description": "Your reading streak and today’s goal"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendar",
+      "description": "Your reading calendar"
+    },
+    "Quote": {
+      "label": "Tomo · Quote of the day",
+      "description": "A quote you saved, a different one every day"
+    }
+  },
+  "it": {
+    "CurrentlyReading": {
+      "label": "Tomo · In lettura",
+      "description": "Il libro che stai leggendo, con avanzamento e statistiche"
+    },
+    "QuickStart": {
+      "label": "Tomo · Avvia sessione",
+      "description": "Avvia una sessione di lettura scegliendo un libro"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Giorni di fila",
+      "description": "I tuoi giorni di lettura di fila e l’obiettivo di oggi"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendario",
+      "description": "Il tuo calendario di lettura"
+    },
+    "Quote": {
+      "label": "Tomo · Citazione del giorno",
+      "description": "Una citazione che hai salvato, diversa ogni giorno"
+    }
+  },
+  "es": {
+    "CurrentlyReading": {
+      "label": "Tomo · Leyendo",
+      "description": "El libro que estás leyendo, con tu progreso y estadísticas"
+    },
+    "QuickStart": {
+      "label": "Tomo · Empezar a leer",
+      "description": "Empieza una sesión de lectura eligiendo un libro"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Racha y objetivo",
+      "description": "Tu racha de lectura y el objetivo de hoy"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendario",
+      "description": "Tu calendario de lectura"
+    },
+    "Quote": {
+      "label": "Tomo · Cita del día",
+      "description": "Una cita que guardaste, distinta cada día"
+    }
+  },
+  "fr": {
+    "CurrentlyReading": {
+      "label": "Tomo · Lecture en cours",
+      "description": "Le livre que tu lis, avec ta progression et tes statistiques"
+    },
+    "QuickStart": {
+      "label": "Tomo · Lancer une session",
+      "description": "Lance une session de lecture en choisissant un livre"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Série et objectif",
+      "description": "Tes jours de lecture d’affilée et l’objectif du jour"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendrier",
+      "description": "Ton calendrier de lecture"
+    },
+    "Quote": {
+      "label": "Tomo · Citation du jour",
+      "description": "Une citation que tu as enregistrée, différente chaque jour"
+    }
+  },
+  "de": {
+    "CurrentlyReading": {
+      "label": "Tomo · Aktuelles Buch",
+      "description": "Das Buch, das du gerade liest, mit Fortschritt und Statistiken"
+    },
+    "QuickStart": {
+      "label": "Tomo · Lesesitzung starten",
+      "description": "Starte eine Lesesitzung mit einem Buch deiner Wahl"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Serie & Ziel",
+      "description": "Deine Lesetage in Folge und dein heutiges Ziel"
+    },
+    "Heatmap": {
+      "label": "Tomo · Lesekalender",
+      "description": "Deine Lesetage auf einen Blick"
+    },
+    "Quote": {
+      "label": "Tomo · Zitat des Tages",
+      "description": "Eines deiner gespeicherten Zitate, jeden Tag ein anderes"
+    }
+  },
+  "pt": {
+    "CurrentlyReading": {
+      "label": "Tomo · A ler",
+      "description": "O livro que estás a ler, com o progresso e as estatísticas"
+    },
+    "QuickStart": {
+      "label": "Tomo · Começar a ler",
+      "description": "Começa uma sessão de leitura escolhendo um livro"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Sequência e objetivo",
+      "description": "A tua sequência de dias de leitura e o objetivo de hoje"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendário",
+      "description": "O teu calendário de leitura"
+    },
+    "Quote": {
+      "label": "Tomo · Citação do dia",
+      "description": "Uma citação que guardaste, diferente todos os dias"
+    }
+  },
+  "pt-BR": {
+    "CurrentlyReading": {
+      "label": "Tomo · Lendo agora",
+      "description": "O livro que você está lendo, com progresso e estatísticas"
+    },
+    "QuickStart": {
+      "label": "Tomo · Começar a ler",
+      "description": "Comece uma sessão de leitura escolhendo um livro"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Sequência e meta",
+      "description": "Seus dias seguidos de leitura e a meta de hoje"
+    },
+    "Heatmap": {
+      "label": "Tomo · Calendário",
+      "description": "Seu calendário de leitura"
+    },
+    "Quote": {
+      "label": "Tomo · Citação do dia",
+      "description": "Uma citação que você salvou, diferente a cada dia"
+    }
+  },
+  "nl": {
+    "CurrentlyReading": {
+      "label": "Tomo · Aan het lezen",
+      "description": "Het boek dat je nu leest, met voortgang en statistieken"
+    },
+    "QuickStart": {
+      "label": "Tomo · Sessie starten",
+      "description": "Start een leessessie door een boek te kiezen"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Reeks en doel",
+      "description": "Je leesreeks en je doel voor vandaag"
+    },
+    "Heatmap": {
+      "label": "Tomo · Leeskalender",
+      "description": "Je leesdagen in één oogopslag"
+    },
+    "Quote": {
+      "label": "Tomo · Citaat van de dag",
+      "description": "Een citaat dat je hebt bewaard, elke dag een ander"
+    }
+  },
+  "pl": {
+    "CurrentlyReading": {
+      "label": "Tomo · Teraz czytam",
+      "description": "Książka, którą teraz czytasz, z postępem i statystykami"
+    },
+    "QuickStart": {
+      "label": "Tomo · Nowa sesja",
+      "description": "Rozpocznij sesję czytania, wybierając książkę"
+    },
+    "StreakGoal": {
+      "label": "Tomo · Seria i cel",
+      "description": "Twoja seria dni z czytaniem i dzisiejszy cel"
+    },
+    "Heatmap": {
+      "label": "Tomo · Kalendarz",
+      "description": "Twój kalendarz czytania"
+    },
+    "Quote": {
+      "label": "Tomo · Cytat dnia",
+      "description": "Jeden z zapisanych cytatów, każdego dnia inny"
+    }
+  },
+  "ja": {
+    "CurrentlyReading": {
+      "label": "Tomo · 読書中",
+      "description": "読んでいる本と進捗、統計を表示"
+    },
+    "QuickStart": {
+      "label": "Tomo · 読書を開始",
+      "description": "本を選んで読書セッションを開始"
+    },
+    "StreakGoal": {
+      "label": "Tomo · 連続日数と目標",
+      "description": "連続読書日数と今日の目標"
+    },
+    "Heatmap": {
+      "label": "Tomo · カレンダー",
+      "description": "あなたの読書カレンダー"
+    },
+    "Quote": {
+      "label": "Tomo · 今日の引用",
+      "description": "保存した引用を毎日ひとつずつ表示"
+    }
+  },
+  "ko": {
+    "CurrentlyReading": {
+      "label": "Tomo · 읽는 중",
+      "description": "읽고 있는 책의 진행률과 통계"
+    },
+    "QuickStart": {
+      "label": "Tomo · 독서 시작",
+      "description": "책을 골라 바로 독서 세션 시작"
+    },
+    "StreakGoal": {
+      "label": "Tomo · 연속 독서와 목표",
+      "description": "연속 독서일과 오늘의 목표"
+    },
+    "Heatmap": {
+      "label": "Tomo · 캘린더",
+      "description": "나의 독서 캘린더"
+    },
+    "Quote": {
+      "label": "Tomo · 오늘의 문장",
+      "description": "저장한 인용구를 매일 하나씩"
+    }
+  },
+  "zh-Hant": {
+    "CurrentlyReading": {
+      "label": "Tomo · 閱讀中",
+      "description": "你正在讀的書，附上進度和統計"
+    },
+    "QuickStart": {
+      "label": "Tomo · 開始閱讀",
+      "description": "選一本書，馬上開始計時閱讀"
+    },
+    "StreakGoal": {
+      "label": "Tomo · 連續天數與目標",
+      "description": "你的連續閱讀天數和今天的目標"
+    },
+    "Heatmap": {
+      "label": "Tomo · 閱讀日曆",
+      "description": "你的閱讀日曆"
+    },
+    "Quote": {
+      "label": "Tomo · 每日一句",
+      "description": "從你儲存的摘句中，每天換一句"
+    }
+  }
+}

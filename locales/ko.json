@@ -1,0 +1,4 @@
+{
+  "NSCameraUsageDescription": "책 바코드(ISBN)를 스캔하기 위해 카메라를 사용해요.",
+  "NSPhotoLibraryUsageDescription": "책 표지를 고를 수 있도록 사진에 접근해요."
+}

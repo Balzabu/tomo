@@ -12,6 +12,7 @@ import {
 import { Image } from 'expo-image';
 import type { WidgetConfigurationScreenProps } from 'react-native-android-widget';
 import { Book } from '@/types';
+import { formatInt } from '@/i18n';
 import {
   loadWidgetContext,
   progressPct,
@@ -178,7 +179,7 @@ export function WidgetConfigScreen({
                     />
                   </View>
                   <Text style={[styles.pct, { color: c.textFaint }]}>
-                    {b.pageCount ? `${b.currentPage}/${b.pageCount} · ${pct}%` : `${pct}%`}
+                    {b.pageCount ? `${formatInt(b.currentPage, ctx.lang)}/${formatInt(b.pageCount, ctx.lang)} · ${t('common.percent', { n: pct })}` : t('common.percent', { n: pct })}
                   </Text>
                 </View>
               </Pressable>

@@ -107,7 +107,7 @@ export default function NotesScreen() {
     (n: BookNote) => {
       const removed = store().deleteNote(n.id);
       if (!removed) return;
-      useSnackbar.getState().show(tr('note.deleted'), {
+      useSnackbar.getState().show(tr(n.type === 'quote' ? 'quote.deleted' : 'note.deleted'), {
         actionLabel: tr('common.undo'),
         onAction: () => store().restoreNote(removed),
       });

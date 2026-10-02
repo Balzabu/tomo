@@ -187,7 +187,7 @@ export function QuickStartWidget({ theme, t, size, books, more }: Props) {
                 />
                 {rowH >= 54 ? (
                   <TextWidget
-                    text={b.pct != null && b.pct > 0 ? `${b.pct}% · ${b.author}` : b.author}
+                    text={b.pct != null && b.pct > 0 ? `${t('common.percent', { n: b.pct })} · ${b.author}` : b.author}
                     maxLines={1}
                     truncate="END"
                     style={{ color: hx(c.textMuted), fontSize: 11, marginTop: 1 }}

@@ -2,6 +2,27 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
+## 1.5.0 (unreleased)
+
+### What's new
+
+- Six new languages: Portuguese (Brazil), Dutch, Polish, Japanese, Korean and Traditional Chinese. Brazilian phones now get Brazilian Portuguese instead of the European one, and Taiwan, Hong Kong and Macau get Traditional Chinese.
+- The widgets in the launcher's widget picker now have their names and descriptions in your language.
+
+### Fixes
+
+- Every translation was reviewed by native speakers, screen by screen: wording that was too literal or unnatural has been rewritten, terms are consistent across the app, and buttons say what they do (the ▶ button on the "Reading" cards no longer reads "Read" as in "finished" in some languages).
+- Counts read correctly in the singular ("1 attempt left", "1 selected", "1 star") and, in Polish, in all plural forms.
+- Dates, times, durations and percentages follow each language's conventions (e.g. "2. Okt." in German, "febrero de 2027" in Spanish, "2026年10月2日" in Japanese, "29 %" in French).
+- Korean text wraps between words instead of in the middle of a word.
+- Long labels no longer get cut off in segmented controls, the goal presets and the settings rows.
+- The year in review shows the average rating with your language's decimal separator and the busiest month in full.
+- Deleting a quote now says "Quote deleted" instead of "Note deleted".
+- Widgets: the privacy text ("Tomo is locked · tap to open") no longer breaks mid-phrase in small widgets, and an empty reading time shows "–" instead of "0s".
+- The camera permission screen of the barcode scanner centres its buttons.
+
+Install the APK below (Android 7.0+). It installs over v1.4.0.
+
 ## 1.4.0 (2026-09-30)
 
 ### What's new

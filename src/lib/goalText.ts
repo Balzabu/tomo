@@ -5,8 +5,7 @@ import type { TFunc } from '@/i18n';
 /** "libro"/"libri", "pagina"/"pagine", "min". */
 export function unitFor(metric: GoalMetric, n: number, tr: TFunc): string {
   if (metric === 'minutes') return tr('unit.min');
-  if (metric === 'books') return n === 1 ? tr('unit.book') : tr('unit.books');
-  return n === 1 ? tr('unit.page') : tr('unit.pages');
+  return tr(metric === 'books' ? 'unit.books' : 'unit.pages', { n });
 }
 
 export function goalTitle(goal: Goal, tr: TFunc): string {

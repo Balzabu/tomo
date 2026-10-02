@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Book } from '@/types';
 import { useStore } from '@/store/useStore';
-import { durationUnits, formatDateKey, formatInt, useTranslation } from '@/i18n';
+import { durationUnits, formatDateKey, formatInt, numUnitSep, useTranslation, wordSep } from '@/i18n';
 import { CardShareModal } from '@/components/CardShareModal';
 import { readingCurve, readStats } from '@/lib/plan';
 import { formatDuration } from '@/lib/utils';
@@ -26,15 +26,15 @@ export function MemoryShareModal({ visible, book, onClose }: { visible: boolean;
       st.start && st.end
         ? st.start === st.end
           ? formatDateKey(st.end, lang)
-          : `${formatDateKey(st.start, lang).replace(/ \d{4}$/, st.start.slice(0, 4) === st.end.slice(0, 4) ? '' : '$&')} – ${formatDateKey(st.end, lang)}`
+          : `${formatDateKey(st.start, lang, st.start.slice(0, 4) !== st.end.slice(0, 4))} – ${formatDateKey(st.end, lang)}`
         : st.end
         ? formatDateKey(st.end, lang)
         : '';
     const tiles = [
       ...(st.days ? [{ label: st.days === 1 ? tr('memory.day') : tr('memory.days'), value: formatInt(st.days, lang) }] : []),
-      ...(st.pages ? [{ label: tr('unit.pages'), value: formatInt(st.pages, lang) }] : []),
+      ...(st.pages ? [{ label: tr('unit.pages', { n: st.pages }), value: formatInt(st.pages, lang) }] : []),
       ...(st.seconds >= 60 ? [{ label: tr('memory.time'), value: formatDuration(st.seconds, durationUnits(lang)) }] : []),
-      ...(st.sessions ? [{ label: tr('memory.sessions'), value: formatInt(st.sessions, lang) }] : []),
+      ...(st.sessions ? [{ label: tr('memory.sessions', { n: st.sessions }), value: formatInt(st.sessions, lang) }] : []),
     ];
     const author = book.authors.join(', ') || tr('common.unknownAuthor');
     return {
@@ -53,8 +53,8 @@ export function MemoryShareModal({ visible, book, onClose }: { visible: boolean;
       },
       text: [
         `📖 ${book.title} — ${author}`,
-        range ? `${tr('memory.readOn')} ${range}` : '',
-        tiles.map((x) => `${x.value} ${x.label}`).join(' · '),
+        range ? `${tr('memory.readOn')}${/[:：]$/.test(tr('memory.readOn')) && wordSep(lang) === '' ? '' : ' '}${range}` : '',
+        tiles.map((x) => `${x.value}${numUnitSep(lang)}${x.label}`).join(' · '),
         book.rating ? '★'.repeat(Math.round(book.rating)) : '',
         quote ? `“${quote}”` : '',
       ]

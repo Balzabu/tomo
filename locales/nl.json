@@ -1,0 +1,4 @@
+{
+  "NSCameraUsageDescription": "Tomo gebruikt de camera om de streepjescode (ISBN) van boeken te scannen.",
+  "NSPhotoLibraryUsageDescription": "Tomo heeft toegang tot je foto's nodig zodat je een boekomslag kunt kiezen."
+}

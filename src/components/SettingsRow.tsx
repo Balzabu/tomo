@@ -1,14 +1,19 @@
 import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, spacing, useTheme } from '@/theme/theme';
+import { useTranslation } from '@/i18n';
 
 /** A titled group of settings rows rendered as one card. */
 export function SettingsGroup({ title, children }: { title?: string; children: React.ReactNode }) {
   const t = useTheme();
+  const { lang } = useTranslation();
+  // Small caps headers suit Latin scripts; in CJK they'd only shout the Latin
+  // words ("App" → "APP") next to the same word lower-case elsewhere.
+  const cjk = lang === 'ja' || lang === 'ko' || lang === 'zh-Hant';
   return (
     <View style={{ gap: 8 }}>
       {title ? (
-        <Text style={[styles.groupHeader, { color: t.colors.textMuted }]}>{title.toUpperCase()}</Text>
+        <Text style={[styles.groupHeader, { color: t.colors.textMuted }]}>{cjk ? title : title.toUpperCase()}</Text>
       ) : null}
       <View
         style={[styles.card, { backgroundColor: t.colors.card, borderColor: t.colors.border }]}
@@ -189,5 +194,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: { flex: 1, fontSize: 15, fontWeight: '600' },
-  value: { fontSize: 14, flexShrink: 1, maxWidth: '45%' },
+  value: { fontSize: 14, flexShrink: 1, maxWidth: '55%' },
 });

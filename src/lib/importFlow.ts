@@ -33,8 +33,9 @@ function ask(title: string, message: string, buttons: { text: string; style?: 'c
   });
 }
 
+/** Count line: translate() picks the singular / plural variant for {n}. */
 function plural(tr: TFunc, key: string, n: number): string {
-  return n === 1 ? tr(`${key}One`) : tr(key, { n });
+  return tr(key, { n });
 }
 
 function failMessage(tr: TFunc, e: unknown): string {
@@ -73,7 +74,7 @@ export async function importFromUri(uri: string, tr: TFunc, opts: { signal?: Abo
     bundle.sessions.length ? plural(tr, 'import.foundSessions', bundle.sessions.length) : '',
   ]
     .filter(Boolean)
-    .join(', ');
+    .join(' · ');
   const go = await ask(
     tr('import.confirmTitle', { source: SOURCE_NAME[bundle.source] }),
     tr('import.confirmMsg', { found }),
@@ -121,7 +122,7 @@ export async function restoreTomo(imported: AppData, tr: TFunc): Promise<void> {
   } else if (store.books.length === 0) {
     // Nothing to lose, but a file shared from another app still deserves a
     // look before it becomes the library.
-    const sure = await ask(tr('restore.emptyTitle'), tr(imported.books.length === 1 ? 'restore.emptyMsgOne' : 'restore.emptyMsg', { n: imported.books.length }), [
+    const sure = await ask(tr('restore.emptyTitle'), tr('restore.emptyMsg', { n: imported.books.length }), [
       { text: tr('common.cancel'), style: 'cancel', value: 'no' },
       { text: tr('restore.restore'), value: 'yes' },
     ]);
@@ -151,7 +152,7 @@ export async function restoreTomo(imported: AppData, tr: TFunc): Promise<void> {
       const lost = books.filter((b) => !kept.has(b.id));
       if (lost.length > 0) {
         const titles = lost.slice(0, 5).map((b) => `• ${b.title}`).join('\n') + (lost.length > 5 ? '\n…' : '');
-        const sure = await ask(tr('restore.removeTitle'), tr(lost.length === 1 ? 'restore.removeMsgOne' : 'restore.removeMsg', { n: lost.length, titles }), [
+        const sure = await ask(tr('restore.removeTitle'), tr('restore.removeMsg', { n: lost.length, titles }), [
           { text: tr('common.cancel'), style: 'cancel', value: 'no' },
           { text: tr('restore.mergeAnyway'), style: 'destructive', value: 'yes' },
         ]);

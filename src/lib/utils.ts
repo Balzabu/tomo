@@ -68,6 +68,11 @@ export interface DurationUnits {
   h: string;
   m: string;
   s: string;
+  /** between hours and minutes: ' ' ("1h 24m"), '' in Japanese/Chinese */
+  sep?: string;
+  /** between a number and its unit: '' ("1h"), a no-break space where the
+   *  language's typography wants one ("1 h 24 min") */
+  num?: string;
 }
 const DEFAULT_UNITS: DurationUnits = { h: 'h', m: 'm', s: 's' };
 
@@ -79,9 +84,10 @@ export function formatDuration(seconds: number, units: DurationUnits = DEFAULT_U
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h}${units.h} ${m}${units.m}`;
-  if (m > 0) return `${m}${units.m}`;
-  return `${sec}${units.s}`;
+  const num = units.num ?? '';
+  if (h > 0) return `${h}${num}${units.h}${units.sep ?? ' '}${m}${num}${units.m}`;
+  if (m > 0) return `${m}${num}${units.m}`;
+  return `${sec}${num}${units.s}`;
 }
 
 /** Clock format HH:MM:SS or MM:SS for the live timer. */

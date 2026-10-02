@@ -35,7 +35,8 @@ export interface QuoteCardContent {
   title?: string;
   author?: string;
   page?: number;
-  pageAbbr: string;
+  /** "p. 42" in the app language. */
+  pageLabel?: string;
   coverUrl?: string;
 }
 export interface WrappedCardContent {
@@ -298,7 +299,7 @@ function QuoteBody({ content, ink, u, story }: { content: QuoteCardContent; ink:
   const base = story ? 8.4 : 7;
   const fs = u * (len < 70 ? base : len < 140 ? base * 0.84 : len < 240 ? base * 0.7 : base * 0.6);
   const lines = story ? 14 : 7;
-  const meta = [content.author, content.page != null ? `${content.pageAbbr} ${content.page}` : undefined].filter(Boolean).join(' · ');
+  const meta = [content.author, content.pageLabel].filter(Boolean).join(' · ');
   return (
     <View style={{ gap: u * 4 }}>
       <Text style={{ color: ink.accent, opacity: ink.paper ? 0.8 : 0.55, fontSize: Math.round(u * 20), lineHeight: Math.round(u * 17), fontFamily: SERIF, marginBottom: -u * 5 }}>“</Text>

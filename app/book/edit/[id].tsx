@@ -395,7 +395,7 @@ function DateField({
         <TextInput
           value={value}
           onChangeText={onChange}
-          placeholder="YYYY-MM-DD"
+          placeholder={tr('editBook.datePlaceholder')}
           placeholderTextColor={t.colors.textFaint}
           keyboardType="numbers-and-punctuation"
           autoCapitalize="none"

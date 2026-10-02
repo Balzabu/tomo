@@ -105,12 +105,15 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
   const pct = book.pct;
   const pageText = book.pageCount
     ? `${book.currentPage} / ${book.pageCount}`
-    : `${t('common.pageAbbr')} ${book.currentPage}`;
-  const timeText = formatDuration(book.totalSeconds, {
-    h: t('unit.hourAbbr'),
-    m: t('unit.minAbbr'),
-    s: t('unit.secAbbr'),
-  });
+    : t('common.pageNum', { n: book.currentPage });
+  const timeText =
+    book.totalSeconds > 0
+      ? formatDuration(book.totalSeconds, {
+          h: t('unit.hourAbbr'),
+          m: t('unit.minAbbr'),
+          s: t('unit.secAbbr'),
+        })
+      : '–';
   const showSelector = total > 1;
   const openBook = link(`book/${book.id}`);
   const startTimer = link(`timer/${book.id}`);
@@ -164,7 +167,7 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
           <FlexWidget style={{ flex: 1, marginLeft: 10, alignItems: 'flex-end' }}>
             {selector}
             <TextWidget
-              text={`${pct}%`}
+              text={t('common.percent', { n: pct })}
               style={{
                 color: hx(c.text),
                 fontSize: 26,
@@ -234,7 +237,7 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
             <ProgressBar theme={theme} pct={pct} />
           </FlexWidget>
           <TextWidget
-            text={book.plan ? `${pct}% · ${book.plan.text}` : `${pct}% · ${pageText}`}
+            text={`${t('common.percent', { n: pct })} · ${book.plan ? book.plan.text : pageText}`}
             maxLines={1}
             style={{ color: hx(c.textMuted), fontSize: 11, fontWeight: '600', marginTop: 5 }}
           />
@@ -279,7 +282,7 @@ export function CurrentlyReadingWidget({ theme, t, size, book, index = 0, total 
           <FlexWidget style={{ flexDirection: 'row', width: 'match_parent', alignItems: 'flex-end' }}>
             <FlexWidget style={{ flex: 1 }}>
               <TextWidget
-                text={`${pct}%`}
+                text={t('common.percent', { n: pct })}
                 style={{ color: hx(c.text), fontSize: big ? 26 : 22, fontWeight: '800' }}
               />
               <TextWidget

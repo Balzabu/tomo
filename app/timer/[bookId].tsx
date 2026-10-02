@@ -451,7 +451,7 @@ export default function TimerScreen() {
       </View>
       {captured > 0 ? (
         <Text style={[styles.captured, { color: t.colors.success }]}>
-          {captured === 1 ? tr('timer.capturedOne') : tr('timer.captured', { n: captured })}
+          {tr('timer.captured', { n: captured })}
         </Text>
       ) : null}
 

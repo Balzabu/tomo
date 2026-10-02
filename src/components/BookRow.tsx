@@ -62,7 +62,7 @@ export const BookRow = memo(function BookRow({
           <View style={{ marginTop: 6, gap: 4 }}>
             <ProgressBar progress={progress} />
             <Text style={[styles.meta, { color: t.colors.textFaint }]}>
-              {tr('common.pageAbbr')} {book.currentPage} / {book.pageCount} · {Math.round(progress * 100)}%
+              {tr('common.pageOf', { n: book.currentPage, total: book.pageCount })} · {tr('common.percent', { n: Math.round(progress * 100) })}
             </Text>
           </View>
         ) : (

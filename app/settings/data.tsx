@@ -155,7 +155,7 @@ export default function DataSettings() {
 
   const lastLine = backup.lastAt
     ? tr('autoBackup.last', {
-        when: `${formatDate(backup.lastAt, lang)} ${formatTimeOfDay(backup.lastAt)}`,
+        when: tr('common.dateTime', { date: formatDate(backup.lastAt, lang), time: formatTimeOfDay(backup.lastAt) }),
       })
     : tr('autoBackup.never');
 
@@ -249,7 +249,8 @@ export default function DataSettings() {
           )}
           <SettingsRow icon="document-text" label={tr('settings.exportCsv')} loading={busy === 'exportCsv'} disabled={busy != null && busy !== 'exportCsv'} onPress={onExportCsv} />
         </SettingsGroup>
-        <SettingsFootnote>{fillCandidates > 0 || fillProgress ? tr('fill.desc') : `${tr('fill.none')} ${tr('settings.exportCsvDesc')}`}</SettingsFootnote>
+        <SettingsFootnote>{fillCandidates > 0 || fillProgress ? tr('fill.desc') : tr('fill.none')}</SettingsFootnote>
+        <SettingsFootnote>{tr('settings.exportCsvDesc')}</SettingsFootnote>
       </View>
     </ScrollView>
   );

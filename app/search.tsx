@@ -137,7 +137,7 @@ export default function SearchScreen() {
               </Text>
               {item.pageCount ? (
                 <Text style={[styles.meta, { color: t.colors.textFaint }]}>
-                  {tr('search.pages', { count: item.pageCount })}
+                  {tr('search.pages', { n: item.pageCount })}
                 </Text>
               ) : null}
               {item.isbn ? (

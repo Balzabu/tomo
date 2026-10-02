@@ -112,8 +112,8 @@ export default function ScanScreen() {
         <Text style={[styles.permSub, { color: t.colors.textMuted }]}>
           {tr('scan.permSub')}
         </Text>
-        <Button label={tr('scan.allow')} icon="camera" onPress={() => void withLockGrace(requestPermission)} />
-        <Button label={tr('scan.manual')} variant="ghost" onPress={() => router.replace('/add-manual')} />
+        <Button label={tr('scan.allow')} icon="camera" style={{ alignSelf: 'center' }} onPress={() => void withLockGrace(requestPermission)} />
+        <Button label={tr('scan.manual')} variant="ghost" style={{ alignSelf: 'center' }} onPress={() => router.replace('/add-manual')} />
       </View>
     );
   }

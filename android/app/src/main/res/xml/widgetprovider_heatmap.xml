@@ -11,7 +11,7 @@
 
     android:resizeMode="horizontal|vertical"
 
-    android:description="@string/widget_heatmap_description"
+    android:description="@string/tomo_widget_heatmap_description"
 
     android:initialLayout="@layout/tomo_widget_loading"
     android:previewImage="@drawable/heatmap_preview"

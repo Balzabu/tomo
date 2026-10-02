@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useStore } from '@/store/useStore';
 import { Goal, GoalMetric, GoalPeriod } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
-import { formatDateKey, formatInt, useTranslation } from '@/i18n';
+import { formatDateKey, formatInt, numUnitSep, useTranslation, wordSep } from '@/i18n';
 import { Button, Card, Pill, ProgressBar, SectionTitle } from '@/components/ui';
 import { Dialog } from '@/components/Dialog';
 import { Segmented } from '@/components/Segmented';
@@ -215,7 +215,7 @@ function GoalCard({ p, today, onEdit, ended }: { p: GoalProgress; today: string;
       <View style={styles.bigRow}>
         <Text style={[styles.bigNum, { color: done ? t.colors.success : t.colors.text }]}>{formatInt(p.current, lang)}</Text>
         <Text style={[styles.target, { color: t.colors.textMuted }]}>
-          / {formatInt(goal.target, lang)} {unitFor(goal.metric, goal.target, tr)}
+          / {formatInt(goal.target, lang)}{numUnitSep(lang)}{unitFor(goal.metric, goal.target, tr)}
         </Text>
         {done ? <Ionicons name="checkmark-circle" size={24} color={t.colors.success} /> : null}
       </View>
@@ -294,6 +294,10 @@ function GoalEditor({
     ];
   })();
 
+  // Two presets can give the same range (e.g. "30 days" on the 2nd of a
+  // 31-day month): highlight only the first.
+  const activePreset = start === today ? presets.find((p) => p.end === end)?.key : undefined;
+
   if (!state) return null;
   const submit = () =>
     onSave({
@@ -356,11 +360,12 @@ function GoalEditor({
             maxLength={60}
             style={[styles.nameInput, { backgroundColor: t.colors.cardAlt, color: t.colors.text }]}
           />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
+          {/* Wrapped, not scrolled: longer translations must stay visible. */}
+          <View style={styles.presetRow}>
             {presets.map((p) => (
-              <Pill key={p.key} label={tr(p.key)} active={start === today && end === p.end} onPress={() => { setStart(today); setEnd(p.end); }} />
+              <Pill key={p.key} label={tr(p.key)} active={p.key === activePreset} onPress={() => { setStart(today); setEnd(p.end); }} />
             ))}
-          </ScrollView>
+          </View>
           <View style={styles.dateRow}>
             <DateField label={tr('goals.from')} value={formatDateKey(start, lang)} onPress={() => setPicking('start')} />
             <Ionicons name="arrow-forward" size={16} color={t.colors.textFaint} />
@@ -382,7 +387,7 @@ function GoalEditor({
             style={[styles.input, { color: t.colors.text }]}
           />
           <Text style={[styles.unit, { color: t.colors.textMuted }]} numberOfLines={1}>
-            {[unitFor(metric, target, tr), period === 'custom' ? '' : tr(`goals.per.${period}`)].filter(Boolean).join(' ')}
+            {[unitFor(metric, target, tr), period === 'custom' ? '' : tr(`goals.per.${period}`)].filter(Boolean).join(wordSep(lang))}
           </Text>
         </View>
         <Stepper icon="add" onPress={() => { setTouched(true); setVal(String(target + step(metric, period))); }} />
@@ -443,7 +448,7 @@ function DateField({ label, value, onPress }: { label: string; value: string; on
       <Text style={[styles.hint, { color: t.colors.textFaint }]}>{label}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Ionicons name="calendar-outline" size={16} color={t.colors.primary} />
-        <Text style={{ color: t.colors.text, fontWeight: '700' }}>{value}</Text>
+        <Text style={{ color: t.colors.text, fontWeight: '700' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
       </View>
     </Pressable>
   );
@@ -472,7 +477,7 @@ const styles = StyleSheet.create({
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   nameInput: { borderRadius: radius.md, paddingHorizontal: spacing.md, height: 48, fontSize: 15 },
   challenge: { gap: spacing.md, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md },
-  presetRow: { gap: spacing.sm },
+  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   dateRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
   footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   delete: { width: 46, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },

@@ -49,8 +49,11 @@ export function Segmented<T extends string | number>({
             accessibilityLabel={o.label}
           >
             {o.icon ? <Ionicons name={o.icon} size={size === 'sm' ? 13 : 15} color={active ? t.colors.primary : t.colors.textMuted} /> : null}
+            {/* Shrink a little rather than truncate: some translations are long. */}
             <Text
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
               style={[styles.label, { color: active ? (t.dark ? t.colors.primary : t.colors.text) : t.colors.textMuted, fontSize: size === 'sm' ? 12 : 13 }]}
             >
               {o.label}

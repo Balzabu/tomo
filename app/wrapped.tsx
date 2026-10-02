@@ -3,8 +3,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { Alert } from '@/components/AppAlert';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
-import { durationUnits, formatInt, useTranslation } from '@/i18n';
-import { monthsShort } from '@/i18n/strings';
+import { durationUnits, formatDecimal, formatInt, monthsLong, numUnitSep, useTranslation } from '@/i18n';
 import { availableWrappedYears, computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
 import { finishesOf } from '@/lib/reads';
@@ -61,7 +60,6 @@ export default function WrappedScreen() {
     );
   }
 
-  const months = monthsShort[lang] ?? monthsShort.en;
   const stats = [
     { label: tr('wrapped.pagesRead'), value: formatInt(w.pagesRead, lang) },
     { label: tr('wrapped.timeRead'), value: formatDuration(w.secondsRead, durationUnits(lang)) },
@@ -70,9 +68,9 @@ export default function WrappedScreen() {
   ];
   const highlights: { label: string; value: string }[] = [];
   if (w.topAuthor) highlights.push({ label: tr('wrapped.topAuthor'), value: w.topAuthor.name });
-  if (w.busiestMonth != null) highlights.push({ label: tr('wrapped.busiestMonth'), value: months[w.busiestMonth] });
+  if (w.busiestMonth != null) highlights.push({ label: tr('wrapped.busiestMonth'), value: monthsLong[lang][w.busiestMonth] });
   if (w.longestBook) highlights.push({ label: tr('wrapped.longestBook'), value: w.longestBook.title });
-  if (w.avgRating != null) highlights.push({ label: tr('wrapped.avgRating'), value: `${w.avgRating.toFixed(1)} ★` });
+  if (w.avgRating != null) highlights.push({ label: tr('wrapped.avgRating'), value: `${formatDecimal(w.avgRating, lang)}${numUnitSep(lang)}★` });
 
   const shareCard = async () => {
     if (busy) return;

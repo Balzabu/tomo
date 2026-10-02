@@ -95,7 +95,7 @@ export function QuoteWidget({ theme, t, size, quote }: Props) {
 
   const open = { clickAction: 'OPEN_URI', clickActionData: { uri: link(`book/${quote.bookId}`) } } as const;
   const len = quote.text.length;
-  const pageSuffix = quote.page != null ? ` · ${t('common.pageAbbr')} ${quote.page}` : '';
+  const pageSuffix = quote.page != null ? ` · ${t('common.pageNum', { n: quote.page })}` : '';
   const rule = (h: 'match_parent' | number) => (
     <FlexWidget style={{ width: 3, height: h, borderRadius: 2, backgroundColor: hx(c.accent) }} />
   );

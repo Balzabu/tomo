@@ -48,7 +48,7 @@ export const NoteItem = memo(function NoteItem({
         </Text>
         {note.page != null ? (
           <Text style={[styles.notePage, { color: t.colors.textFaint }]}>
-            {tr('common.pageAbbr')} {note.page}
+            {tr('common.pageNum', { n: note.page })}
           </Text>
         ) : null}
         {footer}

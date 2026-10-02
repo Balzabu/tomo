@@ -274,7 +274,7 @@ export default function BookDetailScreen() {
           </Text>
           {book.pageCount ? (
             <Text style={[styles.metaSmall, { color: t.colors.textFaint }]}>
-              {tr('search.pages', { count: book.pageCount })}
+              {tr('search.pages', { n: book.pageCount })}
               {publishedYear(book.publishedDate) ? ` · ${publishedYear(book.publishedDate)}` : ''}
             </Text>
           ) : null}
@@ -357,15 +357,16 @@ export default function BookDetailScreen() {
         <ProgressBar progress={progress} height={10} />
         <View style={styles.progressRow}>
           <Text style={[styles.progressTxt, { color: t.colors.text }]}>
-            {tr('book.page', { n: book.currentPage })}
-            {book.pageCount ? ` / ${book.pageCount}` : ''}
+            {book.pageCount
+              ? tr('common.pageOf', { n: book.currentPage, total: book.pageCount })
+              : tr('book.page', { n: book.currentPage })}
           </Text>
           <Text style={[styles.progressTxt, { color: t.colors.textMuted }]}>
-            {Math.round(progress * 100)}%
+            {tr('common.percent', { n: Math.round(progress * 100) })}
           </Text>
         </View>
         <View style={styles.statRow}>
-          <MiniStat label={tr('book.totalTime')} value={formatDuration(totalSeconds, units)} t={t} />
+          <MiniStat label={tr('book.totalTime')} value={totalSeconds > 0 ? formatDuration(totalSeconds, units) : '–'} t={t} />
           <MiniStat label={tr('book.sessions')} value={String(sessions.length)} t={t} />
           {readCountOf(book) > 1 ? (
             <MiniStat label={tr('book.timesRead')} value={`${readCountOf(book)}×`} t={t} />
@@ -498,7 +499,7 @@ export default function BookDetailScreen() {
               onDelete={() => {
                 const removed = store.deleteNote(n.id);
                 if (!removed) return;
-                showSnackbar(tr('note.deleted'), {
+                showSnackbar(tr(n.type === 'quote' ? 'quote.deleted' : 'note.deleted'), {
                   actionLabel: tr('common.undo'),
                   onAction: () => store.restoreNote(removed),
                 });
@@ -531,7 +532,7 @@ export default function BookDetailScreen() {
                 <Text style={[styles.body, { color: t.colors.textMuted }]}>
                   {[
                     s.durationSeconds > 0 ? formatDuration(s.durationSeconds, units) : null,
-                    s.pagesRead ? `${s.pagesRead} ${tr('common.pageAbbr')}` : null,
+                    s.pagesRead ? tr('common.pagesShort', { n: s.pagesRead }) : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -626,7 +627,7 @@ export default function BookDetailScreen() {
                 const removed = store.deleteNote(noteEdit.id);
                 setNoteEdit(null);
                 if (!removed) return;
-                showSnackbar(tr('note.deleted'), {
+                showSnackbar(tr(removed.type === 'quote' ? 'quote.deleted' : 'note.deleted'), {
                   actionLabel: tr('common.undo'),
                   onAction: () => store.restoreNote(removed),
                 });

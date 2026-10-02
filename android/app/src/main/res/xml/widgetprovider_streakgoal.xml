@@ -11,7 +11,7 @@
 
     android:resizeMode="horizontal|vertical"
 
-    android:description="@string/widget_streakgoal_description"
+    android:description="@string/tomo_widget_streakgoal_description"
 
     android:initialLayout="@layout/tomo_widget_loading"
     android:previewImage="@drawable/streakgoal_preview"

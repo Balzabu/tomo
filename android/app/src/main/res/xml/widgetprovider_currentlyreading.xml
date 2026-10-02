@@ -11,7 +11,7 @@
 
     android:resizeMode="horizontal|vertical"
 
-    android:description="@string/widget_currentlyreading_description"
+    android:description="@string/tomo_widget_currentlyreading_description"
 
     android:initialLayout="@layout/tomo_widget_loading"
     android:previewImage="@drawable/currentlyreading_preview"
