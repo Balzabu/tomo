@@ -719,6 +719,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Salta i giorni in cui hai già letto',
     'settings.reminderSmartHint': 'Se hai già registrato una lettura oggi, il promemoria non arriva.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Fine della giornata',
+    'settings.dayStartMidnight': 'Mezzanotte',
+    'settings.dayStartHint': 'Quello che leggi tra mezzanotte e quest’ora conta per il giorno precedente, così non interrompi i tuoi giorni di fila. Ogni sessione conta per il giorno in cui è iniziata; statistiche, obiettivi e calendario si aggiornano subito.',
+    'settings.dayStartNowToday': 'Una lettura iniziata adesso conta per oggi, {date}.',
+    'settings.dayStartNowYesterday': 'Una lettura iniziata adesso conta ancora per ieri, {date}.',
     'notif.bodyBook': 'Riprendi «{title}» da pagina {page}.',
     'notif.streakTitle': '{n} giorni di fila: non fermarti 🔥',
     'notif.streakTitleOne': 'Hai letto ieri: continua oggi 🔥',
@@ -1567,6 +1574,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Skip days when you’ve already read',
     'settings.reminderSmartHint': 'No reminder if you’ve already read today.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'End of day',
+    'settings.dayStartMidnight': 'Midnight',
+    'settings.dayStartHint': 'Reading between midnight and this time counts for the previous day, so late-night reading won’t break your streak. Each session counts for the day it started; stats, goals and the calendar update right away.',
+    'settings.dayStartNowToday': 'Reading you start now counts for today, {date}.',
+    'settings.dayStartNowYesterday': 'Reading you start now still counts for yesterday, {date}.',
     'notif.bodyBook': 'Pick up “{title}” from page {page}.',
     'notif.streakTitle': '{n}-day streak. Keep it going 🔥',
     'notif.streakTitleOne': '1-day streak. Keep it going 🔥',
@@ -2416,6 +2430,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Omitir los días en que ya has leído',
     'settings.reminderSmartHint': 'Si ya registraste lectura hoy, no llega el recordatorio.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Fin del día',
+    'settings.dayStartMidnight': 'Medianoche',
+    'settings.dayStartHint': 'Lo que leas entre la medianoche y esta hora cuenta para el día anterior, así que leer pasada la medianoche no rompe tu racha. Cada sesión cuenta para el día en que empezó; las estadísticas, los objetivos y el calendario se actualizan al momento.',
+    'settings.dayStartNowToday': 'Si empiezas a leer ahora, cuenta para hoy, {date}.',
+    'settings.dayStartNowYesterday': 'Si empiezas a leer ahora, todavía cuenta para ayer, {date}.',
     'notif.bodyBook': 'Retoma «{title}» desde la página {page}.',
     'notif.streakTitle': 'Racha de {n} días: no la pierdas 🔥',
     'notif.streakTitleOne': 'Racha de 1 día: no la pierdas 🔥',
@@ -3264,6 +3285,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Pas de rappel les jours où tu as déjà lu',
     'settings.reminderSmartHint': 'Si tu as déjà enregistré une lecture aujourd’hui, pas de rappel.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Fin de la journée',
+    'settings.dayStartMidnight': 'Minuit',
+    'settings.dayStartHint': 'Ce que tu lis entre minuit et cette heure compte pour la veille : lire après minuit ne casse pas ta série. Chaque session compte pour le jour où elle a commencé ; statistiques, objectifs et calendrier se mettent à jour aussitôt.',
+    'settings.dayStartNowToday': 'Une lecture commencée maintenant compte pour aujourd’hui ({date}).',
+    'settings.dayStartNowYesterday': 'Une lecture commencée maintenant compte encore pour hier ({date}).',
     'notif.bodyBook': 'Reprends « {title} » à la page {page}.',
     'notif.streakTitle': '{n} jours d’affilée : continue 🔥',
     'notif.streakTitleOne': '{n} jour de lecture : continue 🔥',
@@ -4112,6 +4140,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Tage überspringen, an denen du schon gelesen hast',
     'settings.reminderSmartHint': 'Wenn du heute schon Lesezeit erfasst hast, kommt keine Erinnerung.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Tagesende',
+    'settings.dayStartMidnight': 'Mitternacht',
+    'settings.dayStartHint': 'Was du zwischen Mitternacht und dieser Uhrzeit liest, zählt für den Vortag – so reißt deine Serie nicht ab, wenn du nach Mitternacht liest. Jede Sitzung zählt für den Tag, an dem sie begonnen hat; Statistiken, Ziele und Kalender werden sofort aktualisiert.',
+    'settings.dayStartNowToday': 'Eine Sitzung, die du jetzt startest, zählt für heute ({date}).',
+    'settings.dayStartNowYesterday': 'Eine Sitzung, die du jetzt startest, zählt noch für gestern ({date}).',
     'notif.bodyBook': 'Lies „{title}“ ab Seite {page} weiter.',
     'notif.streakTitle': '{n} Tage in Folge: bleib dran 🔥',
     'notif.streakTitleOne': '1 Tag in Folge: bleib dran 🔥',
@@ -4961,6 +4996,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // reminders 1.4
     'settings.reminderSmart': 'Saltar os dias em que já leste',
     'settings.reminderSmartHint': 'Se já registaste leitura hoje, não recebes o lembrete.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Fim do dia',
+    'settings.dayStartMidnight': 'Meia-noite',
+    'settings.dayStartHint': 'O que lês entre a meia-noite e esta hora conta para o dia anterior: ler depois da meia-noite não quebra a tua sequência. Cada sessão conta para o dia em que começou; as estatísticas, os objetivos e o calendário atualizam-se de imediato.',
+    'settings.dayStartNowToday': 'Uma leitura começada agora conta para hoje, {date}.',
+    'settings.dayStartNowYesterday': 'Uma leitura começada agora ainda conta para ontem, {date}.',
     'notif.bodyBook': 'Retoma “{title}” a partir da página {page}.',
     'notif.streakTitle': '{n} dias seguidos: não pares 🔥',
     'notif.streakTitleOne': '1 dia seguido: não pares 🔥',
@@ -5783,6 +5825,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': 'Salve uma citação e veja uma diferente aqui a cada dia',
     'settings.reminderSmart': 'Pular os dias em que você já leu',
     'settings.reminderSmartHint': 'Sem lembrete se você já leu hoje.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Fim do dia',
+    'settings.dayStartMidnight': 'Meia-noite',
+    'settings.dayStartHint': 'O que você lê entre a meia-noite e esse horário conta para o dia anterior: ler depois da meia-noite não quebra sua sequência. Cada sessão conta para o dia em que começou; estatísticas, metas e calendário são atualizados na hora.',
+    'settings.dayStartNowToday': 'Uma leitura iniciada agora conta para hoje, {date}.',
+    'settings.dayStartNowYesterday': 'Uma leitura iniciada agora ainda conta para ontem, {date}.',
     'notif.bodyBook': 'Continue “{title}” a partir da página {page}.',
     'notif.streakTitle': '{n} dias seguidos. Não pare agora 🔥',
     'notif.streakTitleOne': '1 dia seguido. Não pare agora 🔥',
@@ -6575,6 +6624,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': 'Bewaar een citaat en je ziet hier elke dag een ander',
     'settings.reminderSmart': 'Overslaan als je al hebt gelezen',
     'settings.reminderSmartHint': 'Geen herinnering als je vandaag al hebt gelezen.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Einde van de dag',
+    'settings.dayStartMidnight': 'Middernacht',
+    'settings.dayStartHint': 'Wat je tussen middernacht en dit tijdstip leest, telt voor de dag ervoor: lezen na middernacht onderbreekt je reeks dus niet. Elke sessie telt voor de dag waarop ze begon; statistieken, doelen en kalender worden meteen bijgewerkt.',
+    'settings.dayStartNowToday': 'Een sessie die je nu begint, telt voor vandaag, {date}.',
+    'settings.dayStartNowYesterday': 'Een sessie die je nu begint, telt nog voor gisteren, {date}.',
     'notif.bodyBook': 'Lees verder in “{title}” vanaf pagina {page}.',
     'notif.streakTitle': '{n} dagen op rij. Ga zo door 🔥',
     'notif.streakTitleOne': '1 dag op rij. Ga zo door 🔥',
@@ -7378,6 +7434,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': 'Zapisz cytat, a codziennie zobaczysz tu inny',
     'settings.reminderSmart': 'Tylko w dni bez czytania',
     'settings.reminderSmartHint': 'Bez przypomnienia, jeśli dziś już było czytanie.',
+
+    // reading day 1.5.1
+    'settings.dayStart': 'Koniec dnia',
+    'settings.dayStartMidnight': 'Północ',
+    'settings.dayStartHint': 'Czytanie między północą a tą godziną liczy się do poprzedniego dnia, więc czytanie po północy nie przerwie serii. Każda sesja liczy się do dnia, w którym się zaczęła; statystyki, cele i kalendarz aktualizują się od razu.',
+    'settings.dayStartNowToday': 'Sesja rozpoczęta teraz zaliczy się do dzisiejszego dnia ({date}).',
+    'settings.dayStartNowYesterday': 'Sesja rozpoczęta teraz zaliczy się jeszcze do wczorajszego dnia ({date}).',
     'notif.bodyBook': 'Wróć do lektury „{title}” – jesteś na stronie {page}.',
     'notif.streakTitle': 'Seria: {n} dni. Nie odpuszczaj 🔥',
     'notif.streakTitleOne': 'Seria: 1 dzień. Nie odpuszczaj 🔥',
@@ -8181,6 +8244,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': '引用を保存すると、ここに毎日ちがう引用が表示されます',
     'settings.reminderSmart': '読書した日はお休み',
     'settings.reminderSmartHint': 'その日すでに読書していれば、リマインダーは届きません。',
+
+    // reading day 1.5.1
+    'settings.dayStart': '1日の区切り',
+    'settings.dayStartMidnight': '午前0時',
+    'settings.dayStartHint': '午前0時からこの時刻までの読書は前日に記録されるので、日付が変わってから読んでも連続記録が途切れません。各セッションは開始した日に記録され、統計・目標・カレンダーにすぐ反映されます。',
+    'settings.dayStartNowToday': '今から始める読書は今日（{date}）に記録されます。',
+    'settings.dayStartNowYesterday': '今から始める読書はまだ昨日（{date}）に記録されます。',
     'notif.bodyBook': '『{title}』を{page}ページから読みましょう。',
     'notif.streakTitle': '{n}日連続で読書中。この調子で 🔥',
     'notif.streakTitleOne': '1日連続で読書中。この調子で 🔥',
@@ -8969,6 +9039,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': '인용구를 저장하면 매일 다른 문장을 여기서 볼 수 있어요',
     'settings.reminderSmart': '이미 읽은 날은 건너뛰기',
     'settings.reminderSmartHint': '오늘 이미 읽었다면 알림을 보내지 않아요.',
+
+    // reading day 1.5.1
+    'settings.dayStart': '하루가 끝나는 시간',
+    'settings.dayStartMidnight': '자정',
+    'settings.dayStartHint': '자정부터 이 시간 전까지 읽은 기록은 전날로 계산돼서, 자정이 지나 읽어도 연속 기록이 끊기지 않아요. 각 세션은 시작한 날로 기록되고, 통계·목표·캘린더에 바로 반영돼요.',
+    'settings.dayStartNowToday': '지금 읽기 시작하면 오늘({date})로 기록돼요.',
+    'settings.dayStartNowYesterday': '지금 읽기 시작하면 아직 어제({date})로 기록돼요.',
     'notif.bodyBook': '‘{title}’ {page}페이지부터 이어서 읽어 보세요.',
     'notif.streakTitle': '{n}일 연속 독서 중! 계속 이어 가요 🔥',
     'notif.streakTitleOne': '1일 연속 독서 중! 계속 이어 가요 🔥',
@@ -9757,6 +9834,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     'widget.quoteEmpty': '儲存摘句後，這裡每天都會顯示不同的一句',
     'settings.reminderSmart': '已閱讀的日子不提醒',
     'settings.reminderSmartHint': '如果今天已經讀過，就不會發送提醒。',
+
+    // reading day 1.5.1
+    'settings.dayStart': '一天的結束時間',
+    'settings.dayStartMidnight': '午夜',
+    'settings.dayStartHint': '從午夜到這個時間之前的閱讀會算在前一天，所以過了午夜再讀也不會中斷連續閱讀紀錄。每筆閱讀紀錄都算在開始的那一天；統計、目標和日曆會立即更新。',
+    'settings.dayStartNowToday': '現在開始的閱讀會算在今天（{date}）。',
+    'settings.dayStartNowYesterday': '現在開始的閱讀仍會算在昨天（{date}）。',
     'notif.bodyBook': '從第 {page} 頁繼續讀《{title}》吧。',
     'notif.streakTitle': '已連續閱讀 {n} 天，繼續保持 🔥',
     'notif.streakTitleOne': '已連續閱讀 1 天，繼續保持 🔥',

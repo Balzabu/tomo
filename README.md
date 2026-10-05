@@ -17,7 +17,7 @@ It is built with Expo (React Native and TypeScript). Book data comes from Google
 - Library organised by status (to read, reading, read, paused, did not finish), with custom coloured shelves.
 - Add books by searching online (Google Books or Open Library), scanning an ISBN barcode, or entering them by hand with your own cover and an optional ISBN.
 - Update a book from the catalogues by its ISBN, with a field-by-field preview: fields the book is missing are pre-selected, anything that would replace what you entered is opt-in. Books with an ISBN but no cover, page count or author are flagged, and one tap fills the empty fields for the whole library (also done automatically after a CSV import).
-- A reading timer that records how long you read and which pages.
+- A reading timer that records how long you read and which pages. A session counts for the day it started on, and night readers can make the day end later (up to 6 AM), so reading past midnight still counts for the evening before.
 - Per-book progress and a remaining-time estimate, a reading curve, and a reading plan: pick a deadline and Tomo gives you each day's page quota and tells you whether you're ahead or behind.
 - Statistics: reading time, pages, a day streak, a weekly chart, a GitHub-style heatmap, this year against last year to the same day, when you read (time of day and weekday), rating distribution, most-read authors, moods and pace, monthly insights, and a to-read pile forecast with its "tsundoku index", shareable as a card.
 - Goals per day, month or year (pages or minutes; books per month or year) and challenges with a start and end date, each showing whether you're ahead of or behind schedule.

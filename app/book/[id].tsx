@@ -32,7 +32,9 @@ import { readingCurve } from '@/lib/plan';
 import { ReadingSession } from '@/types';
 import { estimateRemaining } from '@/lib/stats';
 import { readCountOf } from '@/lib/reads';
-import { formatDuration } from '@/lib/utils';
+import { dateKeyToDate, formatDuration } from '@/lib/utils';
+import { atReadingDay, placeOnReadingDay, sessionDay } from '@/lib/readingDay';
+import { useDayStartHour } from '@/lib/useTodayKey';
 import { needsCatalogData } from '@/lib/bookRefresh';
 
 /** Four-digit year from a free-form published date ("2005-07-01", "July 2005",
@@ -89,7 +91,11 @@ export default function BookDetailScreen() {
   // Reading memory: opened from the "finished!" snackbar or ?memory=1.
   const [memoryOpen, setMemoryOpen] = useState(memory === '1');
 
-  const curve = useMemo(() => (book ? readingCurve(book, sessions) : []), [book, sessions]);
+  const dayStartHour = useDayStartHour();
+  const curve = useMemo(
+    () => (book ? readingCurve(book, sessions) : []),
+    [book, sessions, dayStartHour]
+  );
 
   // Finishing a book here (status pill, progress update, a session reaching
   // the last page) offers the memory card - a nudge, never a popup.
@@ -131,28 +137,17 @@ export default function BookDetailScreen() {
         ? Math.max(0, draft.endPage - draft.startPage)
         : 0;
     // Keep the original time-of-day when editing (only the day is editable);
-    // new sessions default to midday of the chosen day. Rebuilt via calendar
-    // APIs, not `dayTs + fixed offset`: on a DST-transition day (23h/25h) a
-    // millisecond offset from midnight lands on the wrong wall-clock hour -
-    // or even the wrong day.
-    let startTime: number;
-    if (existing) {
-      const orig = new Date(existing.startTime);
-      const d = new Date(draft.dayTs);
-      d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
-      startTime = d.getTime();
-    } else {
-      const d = new Date(draft.dayTs);
-      d.setHours(12, 0, 0, 0); // midday of the chosen day
-      startTime = d.getTime();
-    }
+    // new sessions default to midday of the chosen day. Built from calendar
+    // fields, not `dayTs + fixed offset`: on a DST-transition day (23h/25h) a
+    // millisecond offset from midnight lands on the wrong wall-clock hour.
+    const orig = existing ? new Date(existing.startTime) : null;
+    const preferred = orig
+      ? atReadingDay(draft.dayTs, orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds())
+      : atReadingDay(draft.dayTs, 12);
     const durationSeconds = draft.minutes * 60;
-    // A session counts for the day it ends: keep that the chosen day, and never
-    // in the future (a long session "today" ends now at the latest).
-    const dayEnd = new Date(draft.dayTs);
-    dayEnd.setHours(23, 59, 59, 0);
-    const endTime = Math.min(startTime + durationSeconds * 1000, dayEnd.getTime(), Date.now());
-    startTime = endTime - durationSeconds * 1000;
+    // A session counts for the reading day it starts on: keep its start on the
+    // chosen day, and its end out of the future.
+    const { startTime, endTime } = placeOnReadingDay(draft.dayTs, preferred, durationSeconds * 1000);
     if (existing) {
       store.updateSession(existing.id, {
         startTime,
@@ -527,7 +522,7 @@ export default function BookDetailScreen() {
             <Pressable key={s.id} style={styles.sessionRow} onPress={() => setSessionEdit(s)}>
                 <Ionicons name="time-outline" size={18} color={t.colors.textFaint} />
                 <Text style={[styles.body, { color: t.colors.text, flex: 1 }]}>
-                  {formatDate(s.startTime, lang)}
+                  {formatDate(dateKeyToDate(sessionDay(s)).getTime(), lang)}
                 </Text>
                 <Text style={[styles.body, { color: t.colors.textMuted }]}>
                   {[

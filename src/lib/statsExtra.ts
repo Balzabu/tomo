@@ -3,6 +3,7 @@
 import type { Book, ReadingPace, ReadingSession } from '@/types';
 import { finishesOf } from './reads.ts';
 import { dateKeyToDate, toDateKey } from './utils.ts';
+import { readingDayKey, sessionDay } from './readingDay.ts';
 
 /** Ratings of finished books bucketed by whole star (index 0 = 1★ … 4 = 5★).
  *  A half star counts with the whole star below it (4.5 → 4★), 0.5 → 1★. */
@@ -80,10 +81,11 @@ export function readingRhythm(sessions: ReadingSession[]): {
     // nothing about the hour you read, only the weekday.
     const d = new Date(s.startTime);
     const manual = d.getHours() === 12 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
-    let wd = weekdayOf.get(s.date);
+    const day = sessionDay(s);
+    let wd = weekdayOf.get(day);
     if (wd === undefined) {
-      wd = (dateKeyToDate(s.date).getDay() + 6) % 7;
-      weekdayOf.set(s.date, wd);
+      wd = (dateKeyToDate(day).getDay() + 6) % 7;
+      weekdayOf.set(day, wd);
     }
     weekdays[wd] += s.durationSeconds;
     if (manual) continue;
@@ -122,7 +124,7 @@ export interface YearTotals {
  * This year so far against last year *up to the same day*, so September isn't
  * compared with a whole December-closed year. Feb 29 falls back to Feb 28.
  */
-export function yearOverYear(books: Book[], sessions: ReadingSession[], today: string = toDateKey()): { current: YearTotals; previous: YearTotals } {
+export function yearOverYear(books: Book[], sessions: ReadingSession[], today: string = readingDayKey()): { current: YearTotals; previous: YearTotals } {
   const y = Number(today.slice(0, 4));
   const md = today.slice(5);
   const prevEnd = md === '02-29' ? `${y - 1}-02-28` : `${y - 1}-${md}`;
@@ -133,11 +135,12 @@ export function yearOverYear(books: Book[], sessions: ReadingSession[], today: s
     let n = 0;
     const days = new Set<string>();
     for (const s of sessions) {
-      if (s.date < start || s.date > end) continue;
+      const day = sessionDay(s);
+      if (day < start || day > end) continue;
       pages += s.pagesRead || 0;
       seconds += s.durationSeconds;
       n++;
-      days.add(s.date);
+      days.add(day);
     }
     let finished = 0;
     let rsum = 0;
@@ -145,7 +148,7 @@ export function yearOverYear(books: Book[], sessions: ReadingSession[], today: s
     for (const b of books) {
       let hit = 0;
       for (const r of finishesOf(b)) {
-        const k = toDateKey(r.finishedAt);
+        const k = readingDayKey(r.finishedAt);
         if (k >= start && k <= end) hit++;
       }
       finished += hit;
@@ -178,13 +181,13 @@ export interface TbrForecast {
 /** How long the to-read pile lasts at your recent pace, and the tsundoku
  *  index (years of backlog). Only the last 12 months count, so an old binge
  *  doesn't promise a pace you no longer have. */
-export function tbrForecast(books: Book[], today: string = toDateKey()): TbrForecast {
+export function tbrForecast(books: Book[], today: string = readingDayKey()): TbrForecast {
   const pile = books.filter((b) => b.status === 'want_to_read');
   const pages = pile.reduce((s, b) => s + (b.pageCount ?? 0), 0);
   const d = dateKeyToDate(today);
   const since = toDateKey(new Date(d.getFullYear() - 1, d.getMonth(), d.getDate(), 12).getTime());
   let finished = 0;
-  for (const b of books) for (const r of finishesOf(b)) if (toDateKey(r.finishedAt) > since) finished++;
+  for (const b of books) for (const r of finishesOf(b)) if (readingDayKey(r.finishedAt) > since) finished++;
   const perMonth = finished / 12;
   const res: TbrForecast = { count: pile.length, pages, perMonth, level: 'unknown' };
   if (pile.length === 0) {

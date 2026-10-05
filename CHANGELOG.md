@@ -2,6 +2,20 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
+## 1.5.1 (unreleased)
+
+### What's new
+
+- Settings → Reading → **End of day**: choose when your reading day ends, from midnight (the default) to 6 AM. Reading between midnight and that time counts for the day before, so if you read past midnight your streak, goals and calendar still credit the evening you were reading. Statistics, goals, the calendar and the widgets update straight away, for past sessions too.
+
+### Fixes
+
+- A reading session that crosses midnight now counts for the day it started on: reading from 23:30 to 00:30 on Sunday no longer leaves Sunday empty and puts everything on Monday.
+- The session history of a book shows the same day as the statistics (it showed the start day while the statistics used the end day).
+- Sessions added or edited by hand stay on the day you pick, even when they are long or logged late in the evening.
+
+Install the APK below (Android 7.0+). It installs over v1.5.0.
+
 ## 1.5.0 (2026-10-03)
 
 ### What's new

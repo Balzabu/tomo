@@ -9,7 +9,7 @@ import { buildHeatmap, computeInsights, computeStats, dailyTotals, latestWrapped
 import { BarChart, Heatmap, StatTile } from '@/components/charts';
 import { Button, Card, EmptyState, SectionTitle } from '@/components/ui';
 import { dateKeyToDate, formatDuration } from '@/lib/utils';
-import { useTodayKey } from '@/lib/useTodayKey';
+import { useDayStartHour, useTodayKey } from '@/lib/useTodayKey';
 import {
   AuthorsCard,
   MoodPaceCard,
@@ -31,17 +31,19 @@ export default function StatsScreen() {
   // chart), but the app can sit in memory across midnight for days. Refresh
   // the anchor on each tab focus so the memos can't serve yesterday's world.
   const todayKey = useTodayKey();
+  // Session days move with the day start hour: every memo below keys on it.
+  const dayStartHour = useDayStartHour();
 
-  const stats = useMemo(() => computeStats(books, sessions), [books, sessions, todayKey]);
-  const insights = useMemo(() => computeInsights(books, sessions), [books, sessions, todayKey]);
+  const stats = useMemo(() => computeStats(books, sessions), [books, sessions, todayKey, dayStartHour]);
+  const insights = useMemo(() => computeInsights(books, sessions), [books, sessions, todayKey, dayStartHour]);
   // Per-day totals don't depend on "today": one pass, shared by both charts.
-  const daily = useMemo(() => dailyTotals(sessions), [sessions]);
+  const daily = useMemo(() => dailyTotals(sessions), [sessions, dayStartHour]);
   const heat = useMemo(() => buildHeatmap(daily, 17), [daily, todayKey]);
   const monthDelta = insights.pagesThisMonth - insights.pagesLastMonth;
   const monthTrend = monthDelta > 0 ? ` ↑${formatInt(monthDelta, lang)}` : monthDelta < 0 ? ` ↓${formatInt(-monthDelta, lang)}` : '';
   const wrappedReady = useMemo(
     () => latestWrappedYear(books, sessions) != null,
-    [books, sessions, todayKey]
+    [books, sessions, todayKey, dayStartHour]
   );
   const weekData = useMemo(() => {
     const weekdays = localizedWeekdaysShort(lang);

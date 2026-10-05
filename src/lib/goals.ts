@@ -7,6 +7,7 @@
 import type { Book, Goal, GoalMetric, GoalPeriod, GoalType, ReadingSession } from '@/types';
 import { finishesOf } from './reads.ts';
 import { dateKeyToDate, toDateKey } from './utils.ts';
+import { readingDayKey, sessionDay } from './readingDay.ts';
 
 export const GOAL_METRICS: GoalMetric[] = ['books', 'pages', 'minutes'];
 export const GOAL_PERIODS: GoalPeriod[] = ['day', 'month', 'year', 'custom'];
@@ -107,7 +108,7 @@ export interface GoalWindow {
 }
 
 /** The days the goal currently counts. */
-export function goalWindow(goal: Goal, today: string = toDateKey()): GoalWindow {
+export function goalWindow(goal: Goal, today: string = readingDayKey()): GoalWindow {
   const y = today.slice(0, 4);
   switch (goal.period) {
     case 'day':
@@ -141,7 +142,7 @@ export function measure(
     let n = 0;
     for (const b of books) {
       for (const r of finishesOf(b)) {
-        const k = toDateKey(r.finishedAt);
+        const k = readingDayKey(r.finishedAt);
         if (k >= win.start && k <= win.end) n++;
       }
     }
@@ -150,7 +151,8 @@ export function measure(
   let pages = 0;
   let seconds = 0;
   for (const s of sessions) {
-    if (s.date < win.start || s.date > win.end) continue;
+    const day = sessionDay(s);
+    if (day < win.start || day > win.end) continue;
     pages += s.pagesRead || 0;
     seconds += s.durationSeconds;
   }
@@ -180,7 +182,7 @@ export function goalProgress(
   goal: Goal,
   books: Book[],
   sessions: ReadingSession[],
-  today: string = toDateKey()
+  today: string = readingDayKey()
 ): GoalProgress {
   const win = goalWindow(goal, today);
   const current = measure(goal.metric, win, books, sessions);

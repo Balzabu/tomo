@@ -3,7 +3,8 @@ import { useSettings } from '@/store/useSettings';
 import { useStore } from '@/store/useStore';
 import { resolveLang, translate } from '@/i18n';
 import { computeStats } from '@/lib/stats';
-import { toDateKey } from '@/lib/utils';
+import { dateKeyToDate, toDateKey } from '@/lib/utils';
+import { readingDayKey, sessionDay } from '@/lib/readingDay';
 import { reminderDays } from '@/lib/reminderPlan';
 import { cancelReminders, ReminderItem, scheduleReminders } from '@/lib/notifications';
 import { privateContentAllowed } from '@/store/useLock';
@@ -50,12 +51,12 @@ async function syncOnce(): Promise<boolean> {
     return ok;
   }
 
-  const today = toDateKey();
-  const readToday = sessions.some((s) => s.date === today);
+  const today = readingDayKey();
+  const readToday = sessions.some((s) => sessionDay(s) === today);
   const streak = computeStats(books, sessions).currentStreak;
   // The streak is known for the next reminder only: today's, or - once today
   // is read - tomorrow's (the plan is redone whenever the app runs).
-  const tomorrow = new Date();
+  const tomorrow = dateKeyToDate(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const streakDay = readToday ? toDateKey(tomorrow.getTime()) : today;
   const items: ReminderItem[] = reminderDays(st.reminderHour, st.reminderMinute, readToday).map((d) => {
@@ -93,9 +94,9 @@ export function watchReminders(): void {
   armed = true;
   useStore.subscribe((s, prev) => {
     if (s.sessions === prev.sessions) return;
-    const today = toDateKey();
+    const today = readingDayKey();
     if (lastDayWithRead === today) return;
-    if (s.sessions.some((x) => x.date === today)) {
+    if (s.sessions.some((x) => sessionDay(x) === today)) {
       lastDayWithRead = today;
       void syncReminders();
     }

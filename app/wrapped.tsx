@@ -11,6 +11,7 @@ import { Button, EmptyState, Pill } from '@/components/ui';
 import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
 import { ShareStyleControls } from '@/components/ShareStyleControls';
 import { shareViewAsImage } from '@/lib/shareImage';
+import { useDayStartHour } from '@/lib/useTodayKey';
 
 const WRAPPED_STYLES: ShareStyle[] = ['minimal', 'gradient', 'paper'];
 const CARD_W = 320;
@@ -28,13 +29,15 @@ export default function WrappedScreen() {
   // Defaults to the latest year with enough activity (last year in January!)
   // and lets the user pick any earlier one. Memoized so style/aspect taps and
   // the share busy-toggle don't re-aggregate the whole history per render.
-  const years = useMemo(() => availableWrappedYears(books, sessions), [books, sessions]);
+  // Session days move with the day start hour: the memos key on it too.
+  const dayStartHour = useDayStartHour();
+  const years = useMemo(() => availableWrappedYears(books, sessions), [books, sessions, dayStartHour]);
   const [pickedYear, setPickedYear] = useState<number | null>(null);
-  const latest = useMemo(() => latestWrappedYear(books, sessions), [books, sessions]);
+  const latest = useMemo(() => latestWrappedYear(books, sessions), [books, sessions, dayStartHour]);
   const year = pickedYear != null && years.includes(pickedYear) ? pickedYear : latest;
   const w = useMemo(
     () => (year != null ? computeYearWrapped(books, sessions, year) : null),
-    [books, sessions, year]
+    [books, sessions, year, dayStartHour]
   );
   // The covers of the year's books, most recently finished first.
   const covers = useMemo(() => {

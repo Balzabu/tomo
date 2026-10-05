@@ -7,13 +7,14 @@ import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation, formatDate } from '@/i18n';
 import { Button } from '@/components/ui';
 import { Dialog } from '@/components/Dialog';
-import { MAX_SESSION_MINUTES, pagesError, parsePageField } from '@/lib/utils';
+import { dateKeyToDate, MAX_SESSION_MINUTES, pagesError, parsePageField } from '@/lib/utils';
+import { readingDayKey, sessionDay } from '@/lib/readingDay';
 
 export interface SessionDraft {
   startPage?: number;
   endPage?: number;
   minutes: number;
-  /** local day timestamp (midnight) the session happened on */
+  /** reading day the session counts for, as that date's local midnight */
   dayTs: number;
 }
 
@@ -69,16 +70,12 @@ export function SessionEditor({
       setStartPage(session.startPage != null ? String(session.startPage) : '');
       setEndPage(session.endPage != null ? String(session.endPage) : '');
       setMinutes(String(Math.max(1, Math.round(session.durationSeconds / 60))));
-      const d = new Date(session.startTime);
-      d.setHours(0, 0, 0, 0);
-      setDayTs(d.getTime());
+      setDayTs(dateKeyToDate(sessionDay(session)).getTime());
     } else {
       setStartPage(defaultStartPage != null ? String(defaultStartPage) : '');
       setEndPage('');
       setMinutes(defaultMinutes != null ? String(defaultMinutes) : '');
-      const d = new Date(defaultDayTs ?? Date.now());
-      d.setHours(0, 0, 0, 0);
-      setDayTs(d.getTime());
+      setDayTs(dateKeyToDate(readingDayKey(defaultDayTs ?? Date.now())).getTime());
     }
   }, [visible, session, defaultStartPage, defaultMinutes, defaultDayTs]);
 
@@ -89,8 +86,8 @@ export function SessionEditor({
   const ep = parsePageField(endPage);
   const pageErr = pagesError(sp, ep, pageCount);
   const canSave = minutesOk && !pageErr;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Today's reading day: before the day start hour that is still yesterday.
+  const today = dateKeyToDate(readingDayKey());
   const isToday = dayTs >= today.getTime();
 
   const save = () => {

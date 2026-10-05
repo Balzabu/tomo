@@ -1,26 +1,38 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { toDateKey } from '@/lib/utils';
+import { nextDayRollover, readingDayKey } from '@/lib/readingDay';
+import { useSettings } from '@/store/useSettings';
 
 /**
- * Today's local day key, kept current: re-read on screen focus, when the
- * app comes back to the front, and at midnight while it stays open - so
- * daily goals, streaks and plan quotas never show yesterday.
+ * The hour reading days start at. Add it to the deps of anything memoized
+ * from session days: changing it re-buckets every session without touching
+ * the sessions themselves.
+ */
+export function useDayStartHour(): number {
+  return useSettings((s) => s.dayStartHour);
+}
+
+/**
+ * Today's reading day key, kept current: re-read on screen focus, when the
+ * app comes back to the front, when the day start hour changes and at the
+ * rollover while it stays open - so daily goals, streaks and plan quotas
+ * never show yesterday.
  */
 export function useTodayKey(): string {
-  const [today, setToday] = useState(() => toDateKey());
-  const refresh = useCallback(() => setToday(toDateKey()), []);
+  const dayStartHour = useDayStartHour();
+  const [today, setToday] = useState(() => readingDayKey());
+  const refresh = useCallback(() => setToday(readingDayKey()), []);
   useFocusEffect(refresh);
   useEffect(() => {
+    refresh();
     const sub = AppState.addEventListener('change', (st) => st === 'active' && refresh());
-    const now = new Date();
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
-    const timer = setTimeout(refresh, midnight.getTime() - now.getTime());
+    const now = Date.now();
+    const timer = setTimeout(refresh, nextDayRollover(now) - now + 1000);
     return () => {
       sub.remove();
       clearTimeout(timer);
     };
-  }, [today, refresh]);
+  }, [today, refresh, dayStartHour]);
   return today;
 }

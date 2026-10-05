@@ -22,7 +22,8 @@ import {
   PERSIST_FAILED,
 } from '@/lib/storage';
 import { STORAGE_WARN_CHARS } from '@/lib/storageCore';
-import { toDateKey, uid } from '@/lib/utils';
+import { uid } from '@/lib/utils';
+import { readingDayKey, sessionDay } from '@/lib/readingDay';
 import { isbnKey, keepIsbn, normalizeBookIsbns } from '@/lib/isbn';
 import { finishFields, sanitizeReads, withRereadStarted } from '@/lib/reads';
 import { legacyTypeOf, normalizeGoals } from '@/lib/goals';
@@ -511,7 +512,7 @@ export const useStore = create<StoreState>((rawSet, get) => {
         startPage: x.startPage,
         endPage: x.endPage,
         pagesRead: Math.max(0, Math.round(x.pagesRead)),
-        date: toDateKey(x.endTime || x.startTime),
+        date: readingDayKey(x.startTime || x.endTime),
       });
     }
 
@@ -682,11 +683,11 @@ export const useStore = create<StoreState>((rawSet, get) => {
     const session: ReadingSession = {
       ...input,
       id: uid('s_'),
-      // Day-bucket on the END time: a session crossing midnight belongs to the
-      // day you were reading at 00:30, so today's goals/streak credit it
-      // immediately instead of assigning it to a yesterday the UI never
-      // revisits. (For same-day sessions the two are identical.)
-      date: toDateKey(input.endTime ?? input.startTime),
+      // The reading day it started on: an evening session running past
+      // midnight stays on the evening's day. Informational only - every day
+      // bucket is recomputed with sessionDay(), so the day start hour can
+      // change without rewriting sessions.
+      date: readingDayKey(input.startTime),
     };
     // One update for the session and the book it advances: a second set would
     // re-render every subscriber (and re-run stampChanges) twice.
@@ -713,11 +714,9 @@ export const useStore = create<StoreState>((rawSet, get) => {
       const sessions = s.sessions.map((x) => {
         if (x.id !== id) return x;
         const next = { ...x, ...patch };
-        // Keep the day bucket in sync with the (possibly edited) times - end
-        // time wins, matching addSession.
-        if (patch.startTime != null || patch.endTime != null) {
-          next.date = toDateKey(next.endTime ?? next.startTime);
-        }
+        // Keep the stored day in sync with the (possibly edited) start time,
+        // matching addSession.
+        if (patch.startTime != null) next.date = sessionDay({ startTime: next.startTime, date: next.date });
         if (bookId === undefined) bookId = next.bookId;
         return next;
       });

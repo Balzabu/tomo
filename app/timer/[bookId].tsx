@@ -27,7 +27,8 @@ import { useSnackbar } from '@/store/useSnackbar';
 import { useLock } from '@/store/useLock';
 import { NoteType } from '@/types';
 import { BookCover } from '@/components/BookCover';
-import { formatClock, formatTimeOfDay, MAX_SESSION_MINUTES, pagesError, parsePageField, toDateKey } from '@/lib/utils';
+import { formatClock, formatTimeOfDay, MAX_SESSION_MINUTES, pagesError, parsePageField } from '@/lib/utils';
+import { readingDayKey } from '@/lib/readingDay';
 import { requestNotificationPermission, dismissSessionNotification } from '@/lib/notifications';
 import { postSessionNotification } from '@/lib/sessionNotification';
 
@@ -121,10 +122,10 @@ export default function TimerScreen() {
     }
     const s = useActiveSession.getState();
     let a = s.active;
-    // Yesterday's session for this book (left running, or frozen after the
-    // app was killed): keep that reading on its own day instead of silently
-    // continuing it today, and start fresh.
-    if (a && a.bookId === bookId && finish !== '1' && toDateKey(a.lastTick) !== toDateKey()) {
+    // Yesterday's session for this book (an earlier reading day: left
+    // running, or frozen after the app was killed): keep that reading on its
+    // own day instead of silently continuing it today, and start fresh.
+    if (a && a.bookId === bookId && finish !== '1' && readingDayKey(a.lastTick) !== readingDayKey()) {
       bankSession(a);
       s.clear();
       a = null;
@@ -217,7 +218,7 @@ export default function TimerScreen() {
     const a = s.active;
     if (!a || a.bookId !== bookId || a.runningSince == null || phaseRef.current !== 'timing') return;
     // A new day *and* a real gap: reading from 23:55 past midnight is fine.
-    if (useLock.getState().locked || toDateKey(a.lastTick) === toDateKey() || Date.now() - a.lastTick < 60 * 60_000) return;
+    if (useLock.getState().locked || readingDayKey(a.lastTick) === readingDayKey() || Date.now() - a.lastTick < 60 * 60_000) return;
     const tickSecs = sessionElapsedAtLastTick(a);
     const nowSecs = Math.min(MAX_SESSION_MINUTES * 60, sessionElapsed(a, Date.now()));
     s.pauseAtLastTick();
@@ -329,9 +330,8 @@ export default function TimerScreen() {
       validStart != null && validEnd != null ? Math.max(0, validEnd - validStart) : 0;
 
     const wasFinished = book.status === 'finished';
-    // The day a session counts for is the day of its end: when the clock
-    // stopped, not start + duration (a pause across midnight, or a session
-    // resumed later, would otherwise land on an earlier day).
+    // The session counts for the reading day it started on; its end is when
+    // the clock stopped, not start + duration (pauses add wall-clock time).
     const stoppedAt = a?.runningSince != null ? Date.now() : a?.lastTick ?? Date.now();
     addSession({
       bookId: book.id,

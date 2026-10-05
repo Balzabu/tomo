@@ -7,7 +7,7 @@ import { Button } from '@/components/ui';
 import { onColor, spacing, useTheme } from '@/theme/theme';
 import { formatDateKey, monthYear, useTranslation, weekdayInitials } from '@/i18n';
 
-import { toDateKey } from '@/lib/utils';
+import { readingDayKey } from '@/lib/readingDay';
 
 interface Props {
   visible: boolean;
@@ -30,7 +30,7 @@ const keyOf = (y: number, m: number, d: number) =>
 export function DatePickerDialog({ visible, title, value, min, max, onPick, onClose, onClear }: Props) {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
-  const today = toDateKey();
+  const today = readingDayKey();
   const anchor = value ?? (min && min > today ? min : today);
   const [gridW, setGridW] = useState(0);
   const cell = Math.floor(gridW / 7);

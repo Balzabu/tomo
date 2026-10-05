@@ -13,8 +13,9 @@ import { Dialog } from '@/components/Dialog';
 import { Segmented } from '@/components/Segmented';
 import { DatePickerDialog } from '@/components/DatePickerDialog';
 import { daysInclusive, goalProgress, GoalProgress, isValidPairing } from '@/lib/goals';
-import { toDateKey } from '@/lib/utils';
-import { useTodayKey } from '@/lib/useTodayKey';
+import { dateKeyToDate, toDateKey } from '@/lib/utils';
+import { readingDayKey } from '@/lib/readingDay';
+import { useDayStartHour, useTodayKey } from '@/lib/useTodayKey';
 import { goalTitle, unitFor } from '@/lib/goalText';
 
 const METRIC_ICON: Record<GoalMetric, keyof typeof Ionicons.glyphMap> = {
@@ -51,10 +52,11 @@ export default function GoalsScreen() {
   // Goals are anchored to "today"; the tab can stay mounted across midnight,
   // so re-anchor on every focus (same idea as the stats tab).
   const todayKey = useTodayKey();
+  const dayStartHour = useDayStartHour();
 
   const progress = useMemo(
     () => goals.map((g) => goalProgress(g, books, sessions, todayKey)),
-    [goals, books, sessions, todayKey]
+    [goals, books, sessions, todayKey, dayStartHour]
   );
   const byPeriod = (p: GoalPeriod) =>
     progress
@@ -248,13 +250,13 @@ function GoalEditor({
   const [period, setPeriod] = useState<GoalPeriod>('year');
   const [val, setVal] = useState('');
   const [name, setName] = useState('');
-  const [start, setStart] = useState(toDateKey());
-  const [end, setEnd] = useState(toDateKey());
+  const [start, setStart] = useState(() => readingDayKey());
+  const [end, setEnd] = useState(() => readingDayKey());
   const [picking, setPicking] = useState<null | 'start' | 'end'>(null);
   const [touched, setTouched] = useState(false);
 
   const editing = state?.goal;
-  const today = toDateKey();
+  const today = readingDayKey();
 
   const seed = () => {
     const g = state?.goal;
@@ -283,7 +285,7 @@ function GoalEditor({
   const lockedKind = !!editing; // editing keeps its kind: delete + new to change it
 
   const presets: { key: string; end: string; start?: string }[] = (() => {
-    const d = new Date();
+    const d = dateKeyToDate(today);
     const toSunday = (7 - d.getDay()) % 7;
     const monthEnd = toDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0, 12).getTime());
     return [

@@ -15,6 +15,7 @@ import { Flag } from '@/components/Flag';
 import { clearData } from '@/lib/storage';
 import { clearCovers } from '@/lib/covers';
 import { clearReadingSelections } from '@/widgets/widget-prefs';
+import { dayStartLabel } from '@/lib/readingDay';
 
 export default function SettingsScreen() {
   const t = useTheme();
@@ -26,6 +27,7 @@ export default function SettingsScreen() {
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
   const reminderMinute = useSettings((s) => s.reminderMinute);
+  const dayStartHour = useSettings((s) => s.dayStartHour);
   const lockEnabled = useLock((s) => s.config.enabled);
   const c = t.colors;
 
@@ -86,6 +88,12 @@ export default function SettingsScreen() {
 
       <SettingsGroup title={tr('settings.groupReading')}>
         <SettingsRow first icon="notifications" label={tr('settings.reminders')} value={reminderValue} onPress={() => go('/settings/reminders')} />
+        <SettingsRow
+          icon="moon"
+          label={tr('settings.dayStart')}
+          value={dayStartLabel(dayStartHour, tr('settings.dayStartMidnight'))}
+          onPress={() => go('/settings/day-start')}
+        />
         <SettingsRow icon="bookmarks" label={tr('settings.shelves')} value={String(shelfCount)} onPress={() => go('/settings/shelves')} />
         <SettingsRow icon="search" label={tr('settings.bookSearch')} onPress={() => go('/settings/book-search')} />
       </SettingsGroup>

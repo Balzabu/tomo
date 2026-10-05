@@ -5,6 +5,7 @@ import { durationUnits, formatDateKey, formatInt, numUnitSep, useTranslation, wo
 import { CardShareModal } from '@/components/CardShareModal';
 import { readingCurve, readStats } from '@/lib/plan';
 import { formatDuration } from '@/lib/utils';
+import { useDayStartHour } from '@/lib/useTodayKey';
 
 /**
  * A "reading memory" for a finished book: dates, days, pages, time, rating,
@@ -14,6 +15,7 @@ export function MemoryShareModal({ visible, book, onClose }: { visible: boolean;
   const { t: tr, lang } = useTranslation();
   const sessions = useStore((s) => s.sessions);
   const notes = useStore((s) => s.notes);
+  const dayStartHour = useDayStartHour();
 
   const { content, text } = useMemo(() => {
     const st = readStats(book, sessions);
@@ -61,7 +63,7 @@ export function MemoryShareModal({ visible, book, onClose }: { visible: boolean;
         .filter(Boolean)
         .join('\n'),
     };
-  }, [book, sessions, notes, lang, tr]);
+  }, [book, sessions, notes, lang, tr, dayStartHour]);
 
   return (
     <CardShareModal

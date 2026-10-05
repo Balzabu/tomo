@@ -23,7 +23,8 @@ import { CatalogRefreshSheet } from '@/components/CatalogRefreshSheet';
 import { deleteCoverFile } from '@/lib/covers';
 import { compactIsbn, looksLikeIsbn, normalizeIsbn } from '@/lib/isbn';
 import { checkedIsbnAfterLookup, pickValues, RefreshValues } from '@/lib/bookRefresh';
-import { parseLocalDateKey, toDateKey } from '@/lib/utils';
+import { parseLocalDateKey } from '@/lib/utils';
+import { readingDayKey } from '@/lib/readingDay';
 import { ReadingPace, ReadRecord } from '@/types';
 
 /** Reading dates are edited as YYYY-MM-DD text: the app has no date-picker
@@ -39,7 +40,7 @@ interface DateDraft {
 }
 
 function dateKeyOf(ts?: number): string {
-  return ts != null ? toDateKey(ts) : '';
+  return ts != null ? readingDayKey(ts) : '';
 }
 
 function draftOfBook(startedAt?: number, finishedAt?: number): DateDraft {
@@ -413,7 +414,7 @@ function DateField({
           ]}
         />
         <Pressable
-          onPress={() => onChange(toDateKey())}
+          onPress={() => onChange(readingDayKey())}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={tr('session.today')}

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SchemeChoice } from '@/theme/theme';
 import { LANGS, type Lang } from '@/i18n/strings';
 import { LIBRARY_SORTS, LibraryFilter, LibrarySort, ReadingStatus, STATUS_ORDER } from '@/types';
+import { isDayStartHour, setDayStartHour as applyDayStartHour } from '@/lib/readingDay';
 
 export type Language = 'system' | Lang;
 
@@ -20,6 +21,9 @@ interface SettingsState {
   librarySort: LibrarySort;
   librarySortAsc: boolean;
   libraryFilter: LibraryFilter;
+  /** hour the reading day starts at (0 = midnight): reading before it counts
+   *  for the day before */
+  dayStartHour: number;
 
   hydrate: () => Promise<void>;
   setScheme: (scheme: SchemeChoice) => void;
@@ -27,6 +31,7 @@ interface SettingsState {
   setReminder: (enabled: boolean, hour: number, minute: number) => void;
   setReminderSmart: (smart: boolean) => void;
   setLibraryView: (view: Partial<Pick<SettingsState, 'librarySort' | 'librarySortAsc' | 'libraryFilter'>>) => void;
+  setDayStartHour: (hour: number) => void;
 }
 
 const STORAGE_KEY = 'tomo:settings:v2';
@@ -41,6 +46,7 @@ interface Persisted {
   librarySort?: LibrarySort;
   librarySortAsc?: boolean;
   libraryFilter?: LibraryFilter;
+  dayStartHour?: number;
 }
 
 function sanitizeFilter(v: unknown): LibraryFilter {
@@ -70,12 +76,15 @@ export const useSettings = create<SettingsState>((set, get) => ({
   librarySort: 'recent',
   librarySortAsc: false,
   libraryFilter: { kind: 'all' },
+  dayStartHour: 0,
 
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw) {
         const p = JSON.parse(raw) as Partial<Persisted>;
+        const dayStartHour = isDayStartHour(p.dayStartHour) ? p.dayStartHour : 0;
+        applyDayStartHour(dayStartHour);
         set({
           scheme: p.scheme ?? 'system',
           language: LANGUAGES.includes(p.language as Language) ? (p.language as Language) : 'system',
@@ -86,6 +95,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
           librarySort: LIBRARY_SORTS.includes(p.librarySort as LibrarySort) ? (p.librarySort as LibrarySort) : 'recent',
           librarySortAsc: p.librarySortAsc === true,
           libraryFilter: sanitizeFilter(p.libraryFilter),
+          dayStartHour,
           hydrated: true,
         });
         return;
@@ -122,6 +132,17 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set(view);
     persist(snapshot(get, view));
   },
+
+  setDayStartHour: (hour) => {
+    const dayStartHour = isDayStartHour(hour) ? hour : 0;
+    if (dayStartHour === get().dayStartHour) return;
+    // The module value first: subscribers re-render with the new day buckets.
+    applyDayStartHour(dayStartHour);
+    set({ dayStartHour });
+    persist(snapshot(get, { dayStartHour }));
+    // "Today", the streak and the heatmap all move with it.
+    refreshPlacedWidgets();
+  },
 }));
 
 // Widgets render with the persisted theme/language, so a change here must
@@ -150,6 +171,7 @@ function snapshot(get: () => SettingsState, override: Partial<Persisted>): Persi
     librarySort: s.librarySort,
     librarySortAsc: s.librarySortAsc,
     libraryFilter: s.libraryFilter,
+    dayStartHour: s.dayStartHour,
     ...override,
   };
 }

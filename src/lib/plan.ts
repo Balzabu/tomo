@@ -1,7 +1,8 @@
 // Reading plans ("finish by …") and per-book reading curves. Pure (type-only
 // app imports) so the check scripts run it under plain Node.
 import type { Book, ReadingSession } from '@/types';
-import { dateKeyToDate, toDateKey } from './utils.ts';
+import { dateKeyToDate } from './utils.ts';
+import { readingDayKey, sessionDay } from './readingDay.ts';
 
 function daysBetween(a: string, b: string): number {
   return Math.round((dateKeyToDate(b).getTime() - dateKeyToDate(a).getTime()) / 86_400_000);
@@ -30,14 +31,14 @@ export interface PlanProgress {
  * least where you should have been by the end of yesterday, "ahead" once
  * you've already covered today's share.
  */
-export function planProgress(book: Book, sessions: ReadingSession[], today: string = toDateKey()): PlanProgress | null {
+export function planProgress(book: Book, sessions: ReadingSession[], today: string = readingDayKey()): PlanProgress | null {
   const plan = book.plan;
   if (!plan || !book.pageCount || book.pageCount <= 0) return null;
   const total = book.pageCount;
   const current = Math.min(book.currentPage, total);
   const pagesLeft = Math.max(0, total - current);
   let todayRead = 0;
-  for (const s of sessions) if (s.bookId === book.id && s.date === today) todayRead += s.pagesRead || 0;
+  for (const s of sessions) if (s.bookId === book.id && sessionDay(s) === today) todayRead += s.pagesRead || 0;
   todayRead = Math.min(todayRead, Math.max(0, current - plan.startPage));
   const daysLeft = today > plan.target ? 0 : daysBetween(today, plan.target) + 1;
   const leftThisMorning = pagesLeft + todayRead;
@@ -92,21 +93,22 @@ export interface CurvePoint {
  * backwards.
  */
 export function readingCurve(book: Book, sessions: ReadingSession[]): CurvePoint[] {
-  const since = book.startedAt ? toDateKey(book.startedAt) : '';
+  const since = book.startedAt ? readingDayKey(book.startedAt) : '';
   const own = sessions
-    .filter((s) => s.bookId === book.id && s.date >= since)
+    .filter((s) => s.bookId === book.id && sessionDay(s) >= since)
     .sort((a, b) => a.startTime - b.startTime);
   if (own.length === 0) return [];
   const first = own[0];
   let page = first.startPage ?? Math.max(0, (first.endPage ?? 0) - (first.pagesRead || 0));
-  const out: CurvePoint[] = [{ date: first.date, page }];
+  const out: CurvePoint[] = [{ date: sessionDay(first), page }];
   for (const s of own) {
     const next = s.endPage != null ? s.endPage : page + (s.pagesRead || 0);
     page = Math.max(page, next);
     if (book.pageCount) page = Math.min(page, book.pageCount);
     const last = out[out.length - 1];
-    if (last.date === s.date) last.page = page;
-    else out.push({ date: s.date, page });
+    const day = sessionDay(s);
+    if (last.date === day) last.page = page;
+    else out.push({ date: day, page });
   }
   // A lone first point equal to the start carries no shape.
   if (out.length >= 2 && out[0].page === out[1].page && out[0].date === out[1].date) out.shift();
@@ -125,12 +127,16 @@ export interface ReadStats {
 
 /** Totals for a finished read (the memory card). */
 export function readStats(book: Book, sessions: ReadingSession[]): ReadStats {
-  const since = book.startedAt ? toDateKey(book.startedAt) : '';
-  const until = book.finishedAt ? toDateKey(book.finishedAt) : '9999';
-  const own = sessions.filter((s) => s.bookId === book.id && s.date >= since && s.date <= until);
-  const days = new Set(own.map((s) => s.date));
-  const start = book.startedAt ? toDateKey(book.startedAt) : undefined;
-  const end = book.finishedAt ? toDateKey(book.finishedAt) : undefined;
+  const since = book.startedAt ? readingDayKey(book.startedAt) : '';
+  const until = book.finishedAt ? readingDayKey(book.finishedAt) : '9999';
+  const own = sessions.filter((s) => {
+    if (s.bookId !== book.id) return false;
+    const day = sessionDay(s);
+    return day >= since && day <= until;
+  });
+  const days = new Set(own.map(sessionDay));
+  const start = book.startedAt ? readingDayKey(book.startedAt) : undefined;
+  const end = book.finishedAt ? readingDayKey(book.finishedAt) : undefined;
   return {
     start,
     end,

@@ -1,5 +1,6 @@
 import { Book, ReadingSession } from '@/types';
 import { toDateKey, dateKeyToDate } from '@/lib/utils';
+import { readingDayKey, sessionDay } from '@/lib/readingDay';
 import { booksFinishedInYear, countFinishesInYear, finishesOf } from '@/lib/reads';
 
 export interface OverallStats {
@@ -19,7 +20,7 @@ export function computeStats(
   books: Book[],
   sessions: ReadingSession[]
 ): OverallStats {
-  const year = new Date().getFullYear();
+  const year = dateKeyToDate(readingDayKey()).getFullYear();
   const totalSeconds = sessions.reduce((s, x) => s + x.durationSeconds, 0);
   const totalPagesRead = sessions.reduce((s, x) => s + (x.pagesRead || 0), 0);
 
@@ -69,7 +70,8 @@ export function pacedTotals(sessions: ReadingSession[]): { pages: number; second
 export function sessionsByDay(sessions: ReadingSession[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const s of sessions) {
-    map.set(s.date, (map.get(s.date) ?? 0) + s.durationSeconds);
+    const day = sessionDay(s);
+    map.set(day, (map.get(day) ?? 0) + s.durationSeconds);
   }
   return map;
 }
@@ -77,7 +79,8 @@ export function sessionsByDay(sessions: ReadingSession[]): Map<string, number> {
 export function pagesByDay(sessions: ReadingSession[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const s of sessions) {
-    map.set(s.date, (map.get(s.date) ?? 0) + (s.pagesRead || 0));
+    const day = sessionDay(s);
+    map.set(day, (map.get(day) ?? 0) + (s.pagesRead || 0));
   }
   return map;
 }
@@ -95,8 +98,9 @@ export function dailyTotals(sessions: ReadingSession[]): DailyTotals {
   const seconds = new Map<string, number>();
   const pages = new Map<string, number>();
   for (const s of sessions) {
-    seconds.set(s.date, (seconds.get(s.date) ?? 0) + s.durationSeconds);
-    pages.set(s.date, (pages.get(s.date) ?? 0) + (s.pagesRead || 0));
+    const day = sessionDay(s);
+    seconds.set(day, (seconds.get(day) ?? 0) + s.durationSeconds);
+    pages.set(day, (pages.get(day) ?? 0) + (s.pagesRead || 0));
   }
   return { seconds, pages };
 }
@@ -106,7 +110,7 @@ function computeStreaks(sessions: ReadingSession[]): {
   longest: number;
 } {
   if (sessions.length === 0) return { current: 0, longest: 0 };
-  const days = Array.from(new Set(sessions.map((s) => s.date))).sort();
+  const days = Array.from(new Set(sessions.map(sessionDay))).sort();
 
   // longest run of consecutive days
   let longest = 1;
@@ -127,7 +131,8 @@ function computeStreaks(sessions: ReadingSession[]): {
   // current streak counts back from today (or yesterday)
   const set = new Set(days);
   let current = 0;
-  let cursor = new Date();
+  // today's reading day: before the day start hour that is still yesterday
+  let cursor = dateKeyToDate(readingDayKey());
   let key = toDateKey(cursor.getTime());
   if (!set.has(key)) {
     // allow streak to be "alive" if you read yesterday but not yet today
@@ -159,7 +164,7 @@ export function buildHeatmap(
   // as activity too, at the lowest level - otherwise the streak lights up
   // next to a blank heatmap cell.
   const pagesDay = daily.pages;
-  const today = new Date();
+  const today = dateKeyToDate(readingDayKey());
   const dow = (today.getDay() + 6) % 7; // 0 = Monday
   const lastMonday = new Date(today);
   lastMonday.setDate(today.getDate() - dow);
@@ -220,7 +225,7 @@ export interface Insights {
 
 /** A few "fun fact" insights for the stats screen. */
 export function computeInsights(books: Book[], sessions: ReadingSession[]): Insights {
-  const now = new Date();
+  const now = dateKeyToDate(readingDayKey());
   const year = now.getFullYear();
   const thisMonthKey = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const lastDate = new Date(year, now.getMonth() - 1, 1);
@@ -229,7 +234,7 @@ export function computeInsights(books: Book[], sessions: ReadingSession[]): Insi
   let pagesThisMonth = 0;
   let pagesLastMonth = 0;
   for (const s of sessions) {
-    const ym = s.date.slice(0, 7);
+    const ym = sessionDay(s).slice(0, 7);
     if (ym === thisMonthKey) pagesThisMonth += s.pagesRead || 0;
     else if (ym === lastMonthKey) pagesLastMonth += s.pagesRead || 0;
   }
@@ -299,16 +304,16 @@ export function isWrappedAvailable(
 ): boolean {
   const prefix = `${year}-`;
   const finishedThisYear = countFinishesInYear(books, year);
-  const sessionsThisYear = sessions.filter((s) => s.date.startsWith(prefix)).length;
+  const sessionsThisYear = sessions.filter((s) => sessionDay(s).startsWith(prefix)).length;
   return finishedThisYear >= 3 || sessionsThisYear >= 15;
 }
 
 /** Every year that has enough activity for a wrapped, newest first. */
 export function availableWrappedYears(books: Book[], sessions: ReadingSession[]): number[] {
-  const current = new Date().getFullYear();
+  const current = dateKeyToDate(readingDayKey()).getFullYear();
   let earliest = current;
   for (const s of sessions) {
-    const y = Number(s.date.slice(0, 4));
+    const y = Number(sessionDay(s).slice(0, 4));
     if (Number.isFinite(y) && y > 1900 && y < earliest) earliest = y;
   }
   for (const b of books) {
@@ -328,7 +333,7 @@ export function availableWrappedYears(books: Book[], sessions: ReadingSession[])
  * most want it - instead of it vanishing at midnight on Dec 31.
  */
 export function latestWrappedYear(books: Book[], sessions: ReadingSession[]): number | null {
-  const year = new Date().getFullYear();
+  const year = dateKeyToDate(readingDayKey()).getFullYear();
   if (isWrappedAvailable(books, sessions, year)) return year;
   if (isWrappedAvailable(books, sessions, year - 1)) return year - 1;
   return null;
@@ -341,7 +346,7 @@ export function computeYearWrapped(
   year: number
 ): YearWrapped {
   const prefix = `${year}-`;
-  const yearSessions = sessions.filter((s) => s.date.startsWith(prefix));
+  const yearSessions = sessions.filter((s) => sessionDay(s).startsWith(prefix));
   // Per-book aggregates (author, rating, longest, moods) see each book once;
   // the headline count credits every finish, so a re-read counts again.
   const finished = booksFinishedInYear(books, year);
@@ -351,7 +356,7 @@ export function computeYearWrapped(
   const secondsRead = yearSessions.reduce((sum, s) => sum + s.durationSeconds, 0);
 
   // longest streak within the year
-  const days = Array.from(new Set(yearSessions.map((s) => s.date))).sort();
+  const days = Array.from(new Set(yearSessions.map(sessionDay))).sort();
   let longestStreak = days.length > 0 ? 1 : 0;
   let run = days.length > 0 ? 1 : 0;
   for (let i = 1; i < days.length; i++) {
@@ -378,7 +383,7 @@ export function computeYearWrapped(
   }
 
   const monthSeconds = new Array(12).fill(0);
-  for (const s of yearSessions) monthSeconds[dateKeyToDate(s.date).getMonth()] += s.durationSeconds;
+  for (const s of yearSessions) monthSeconds[dateKeyToDate(sessionDay(s)).getMonth()] += s.durationSeconds;
   const maxMonth = Math.max(...monthSeconds);
   const busiestMonth = maxMonth > 0 ? monthSeconds.indexOf(maxMonth) : undefined;
 
@@ -416,8 +421,7 @@ export function recentDailyPages(
   const byPages = daily.pages;
   const bySec = daily.seconds;
   const out: { date: string; pages: number; seconds: number }[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = dateKeyToDate(readingDayKey());
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i); // calendar step (DST-safe)

@@ -14,6 +14,7 @@ import { postSessionNotification } from '@/lib/sessionNotification';
 import { SessionEditor, SessionDraft } from '@/components/SessionEditor';
 import { useTranslation } from '@/i18n';
 import { MAX_SESSION_MINUTES } from '@/lib/utils';
+import { atReadingDay, placeOnReadingDay } from '@/lib/readingDay';
 
 /**
  * App-wide guardian for the active reading session. It:
@@ -164,15 +165,15 @@ export function ActiveSessionWatcher() {
     const a = useActiveSession.getState().active;
     if (!a || !stillPrompted()) return;
     // Keep the real start time-of-day, but honour a day change from the picker.
-    // Rebuilt via calendar APIs, not `dayTs + fixed offset`: on a DST-transition
-    // day a millisecond offset from midnight lands on the wrong wall-clock hour.
+    // Built from calendar fields, not `dayTs + fixed offset`: on a
+    // DST-transition day a millisecond offset from midnight lands on the
+    // wrong wall-clock hour.
     const orig = new Date(a.startedAt);
-    const d = new Date(draft.dayTs);
-    d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+    const preferred = atReadingDay(draft.dayTs, orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
     const durationSeconds = draft.minutes * 60;
-    // Never in the future: "an hour" from 23:30 today ends at now at the latest
-    // (and would otherwise be filed under tomorrow).
-    const startedAt = Math.min(d.getTime(), Date.now() - durationSeconds * 1000);
+    // Never in the future ("an hour" from 23:30 today ends now at the latest),
+    // and still on the chosen reading day.
+    const { startTime: startedAt, endTime } = placeOnReadingDay(draft.dayTs, preferred, durationSeconds * 1000);
     const pagesRead =
       draft.startPage != null && draft.endPage != null
         ? Math.max(0, draft.endPage - draft.startPage)
@@ -180,7 +181,7 @@ export function ActiveSessionWatcher() {
     addSession({
       bookId: a.bookId,
       startTime: startedAt,
-      endTime: startedAt + durationSeconds * 1000,
+      endTime,
       durationSeconds,
       startPage: draft.startPage,
       endPage: draft.endPage,

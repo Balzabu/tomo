@@ -8,7 +8,7 @@ import { migrateLegacyKeys } from '@/lib/migrate';
 import { followsSystem, resolveScheme, SchemeChoice, Theme } from '@/theme/theme';
 import { Language } from '@/store/useSettings';
 import { Lang, resolveLang, translate } from '@/i18n';
-import { toDateKey } from '@/lib/utils';
+import { adoptStoredDayStartHour, readingDayKey, sessionDay } from '@/lib/readingDay';
 
 const SETTINGS_KEY = 'tomo:settings:v2';
 const SCHEME = 'tomo';
@@ -78,9 +78,12 @@ async function buildWidgetContext(preloaded?: AppData): Promise<WidgetContext> {
   try {
     const raw = await AsyncStorage.getItem(SETTINGS_KEY);
     if (raw) {
-      const p = JSON.parse(raw) as { scheme?: SchemeChoice; language?: Language };
+      const p = JSON.parse(raw) as { scheme?: SchemeChoice; language?: Language; dayStartHour?: number };
       scheme = p.scheme ?? 'system';
       language = p.language ?? 'system';
+      // The widgets' own JS runtime never hydrates the settings store: "today",
+      // the streak and the heatmap need the day start hour from here.
+      adoptStoredDayStartHour(p.dayStartHour);
     }
   } catch {
     // defaults
@@ -326,15 +329,15 @@ export function unfinishedBooks(data: AppData, limit = 3): Book[] {
 }
 
 export function todaySeconds(data: AppData): number {
-  const today = toDateKey();
+  const today = readingDayKey();
   return data.sessions
-    .filter((s) => s.date === today)
+    .filter((s) => sessionDay(s) === today)
     .reduce((sum, s) => sum + s.durationSeconds, 0);
 }
 
 export function todayPages(data: AppData): number {
-  const today = toDateKey();
+  const today = readingDayKey();
   return data.sessions
-    .filter((s) => s.date === today)
+    .filter((s) => sessionDay(s) === today)
     .reduce((sum, s) => sum + (s.pagesRead || 0), 0);
 }

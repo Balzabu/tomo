@@ -8,7 +8,7 @@ import { formatDateKey, formatInt, useTranslation } from '@/i18n';
 import { ProgressBar } from '@/components/ui';
 import { DatePickerDialog } from '@/components/DatePickerDialog';
 import { planProgress } from '@/lib/plan';
-import { useTodayKey } from '@/lib/useTodayKey';
+import { useDayStartHour, useTodayKey } from '@/lib/useTodayKey';
 import { useStore } from '@/store/useStore';
 
 /**
@@ -20,7 +20,11 @@ export function PlanBox({ book, sessions }: { book: Book; sessions: ReadingSessi
   const { t: tr, lang } = useTranslation();
   const [picking, setPicking] = useState(false);
   const today = useTodayKey();
-  const p = useMemo(() => planProgress(book, sessions, today), [book, sessions, today]);
+  const dayStartHour = useDayStartHour();
+  const p = useMemo(
+    () => planProgress(book, sessions, today),
+    [book, sessions, today, dayStartHour]
+  );
   const open = book.status === 'reading' || book.status === 'paused' || book.status === 'want_to_read';
   if (!book.pageCount || (!open && !book.plan)) return null;
   if (!open && p?.status !== 'done') return null;

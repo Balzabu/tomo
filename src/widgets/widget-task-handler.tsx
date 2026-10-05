@@ -8,6 +8,7 @@ import { labelValue, numUnitSep } from '@/i18n';
 import { migrateLegacyKeys } from '@/lib/migrate';
 import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
+import { getDayStartHour, readingDayKey } from '@/lib/readingDay';
 import {
   bookTotalSeconds,
   coverToWidgetImage,
@@ -60,7 +61,8 @@ type WidgetName = (typeof WIDGET_NAMES)[number];
 // computed once per (books, sessions, day) rather than once per widget.
 let streakMemo: { books: Book[]; sessions: ReadingSession[]; day: string; streak: number } | null = null;
 function currentStreak(data: AppData): number {
-  const day = toDateKey();
+  // Keyed on the hour too: changing it moves every session's day.
+  const day = `${readingDayKey()}@${getDayStartHour()}`;
   const m = streakMemo;
   if (m && m.books === data.books && m.sessions === data.sessions && m.day === day) return m.streak;
   const streak = computeStats(data.books, data.sessions).currentStreak;
@@ -220,7 +222,7 @@ async function prepareWidget(
       const { cells, cols } = buildHeatmap(dailyTotals(data.sessions), weeks);
       // The grid is padded to the end of the current week: hide the days that
       // haven't happened yet and outline today.
-      const todayKey = toDateKey();
+      const todayKey = readingDayKey();
       let today: { week: number; day: number } | undefined;
       const levels: number[][] = [];
       for (let w = 0; w < cols; w++) {

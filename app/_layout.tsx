@@ -74,6 +74,8 @@ export default function RootLayout() {
   // permission was revoked in the meantime, reflect that in the setting
   // instead of "scheduling" a reminder that can never fire.
   const reminderSmart = useSettings((s) => s.reminderSmart);
+  // "Already read today" depends on when the reading day starts.
+  const dayStartHour = useSettings((s) => s.dayStartHour);
   useEffect(() => {
     if (!settingsHydrated || !hydrated || !reminderEnabled) return;
     void (async () => {
@@ -84,7 +86,7 @@ export default function RootLayout() {
       await syncReminders();
       watchReminders();
     })();
-  }, [settingsHydrated, hydrated, reminderEnabled, reminderHour, reminderMinute, reminderSmart, tr]);
+  }, [settingsHydrated, hydrated, reminderEnabled, reminderHour, reminderMinute, reminderSmart, dayStartHour, tr]);
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.colors.bg);
@@ -179,6 +181,7 @@ export default function RootLayout() {
               <Stack.Screen name="settings/appearance" options={{ title: tr('settings.theme') }} />
               <Stack.Screen name="settings/language" options={{ title: tr('settings.language') }} />
               <Stack.Screen name="settings/reminders" options={{ title: tr('settings.reminders') }} />
+              <Stack.Screen name="settings/day-start" options={{ title: tr('settings.dayStart') }} />
               <Stack.Screen name="settings/shelves" options={{ title: tr('settings.shelves') }} />
               <Stack.Screen name="settings/book-search" options={{ title: tr('settings.bookSearch') }} />
               <Stack.Screen name="settings/data" options={{ title: tr('settings.backupImport') }} />

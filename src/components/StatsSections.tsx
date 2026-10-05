@@ -10,6 +10,7 @@ import { Card, Pill, SectionTitle } from '@/components/ui';
 import { Segmented } from '@/components/Segmented';
 import { CardShareModal } from '@/components/CardShareModal';
 import { formatDuration } from '@/lib/utils';
+import { useDayStartHour } from '@/lib/useTodayKey';
 import {
   DAY_SLOTS,
   moodPace,
@@ -33,7 +34,11 @@ function fmt1(n: number, lang: string): string {
 export function YearCompareCard({ books, sessions, today }: { books: Book[]; sessions: ReadingSession[]; today: string }) {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
-  const { current, previous } = useMemo(() => yearOverYear(books, sessions, today), [books, sessions, today]);
+  const dayStartHour = useDayStartHour();
+  const { current, previous } = useMemo(
+    () => yearOverYear(books, sessions, today),
+    [books, sessions, today, dayStartHour]
+  );
   if (previous.sessions === 0 && previous.books === 0) return null;
   const rows: { key: string; label: string; a: number; b: number; show: (n: number) => string }[] = [
     { key: 'books', label: tr('stats.booksRead'), a: current.books, b: previous.books, show: (n) => formatInt(n, lang) },
@@ -85,7 +90,8 @@ export function RhythmCard({ sessions }: { sessions: ReadingSession[] }) {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
   const [mode, setMode] = useState<'hour' | 'day'>('hour');
-  const r = useMemo(() => readingRhythm(sessions), [sessions]);
+  const dayStartHour = useDayStartHour();
+  const r = useMemo(() => readingRhythm(sessions), [sessions, dayStartHour]);
   if (r.timedSessions < 3) return null;
   const units = durationUnits(lang);
   const short = (s: number) => (s >= 3600 ? `${Math.round(s / 3600)}${units.h}` : `${Math.round(s / 60)}${units.m}`);

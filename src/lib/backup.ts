@@ -4,6 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { AppData, Book, BookNote, Goal, NoteType, ReadingSession, ReadingStatus, Shelf, Tombstone } from '@/types';
 import { emptyData } from '@/lib/storage';
 import { toDateKey } from '@/lib/utils';
+import { readingDayKey } from '@/lib/readingDay';
 import { base64ToCover, coverToBase64, isLocalCover, safeCoverUrl } from '@/lib/covers';
 import { keepIsbn } from '@/lib/isbn';
 import { sanitizeReads } from '@/lib/reads';
@@ -151,7 +152,7 @@ function sanitizeSession(raw: unknown): ReadingSession | null {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
     ? rawDate
     : startTime > 0
-    ? toDateKey(startTime)
+    ? readingDayKey(startTime)
     : null;
   if (!date) return null;
   // Validated fields only - see sanitizeBook for why the raw spread is unsafe.
