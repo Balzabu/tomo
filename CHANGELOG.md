@@ -2,6 +2,14 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
+## 1.5.2 (unreleased)
+
+### Fixes
+
+- A reading timer left running overnight now asks how much of that time was reading when you come back the next day, instead of silently counting the whole night. The question never appeared before: the timer kept refreshing its "last activity" in the background and right on return.
+
+Install the APK below (Android 7.0+). It installs over v1.5.1.
+
 ## 1.5.1 (2026-10-05)
 
 ### What's new

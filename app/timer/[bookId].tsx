@@ -32,6 +32,10 @@ import { readingDayKey } from '@/lib/readingDay';
 import { requestNotificationPermission, dismissSessionNotification } from '@/lib/notifications';
 import { postSessionNotification } from '@/lib/sessionNotification';
 
+/** A gap in the heartbeat this long, across a change of reading day, means
+ *  the clock was left running (see checkStale). */
+const STALE_GAP_MS = 60 * 60_000;
+
 export default function TimerScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
@@ -200,12 +204,20 @@ export default function TimerScreen() {
   }, [captureRequested, appLocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An occasional heartbeat so a kill-recovery knows how far the session got
-  // (throttled to keep disk writes rare).
+  // (throttled to keep disk writes rare). Only while the app is in front (it
+  // also ticks when it leaves, below): a heartbeat in the background would
+  // hide a clock left running overnight from checkStale. After a gap that
+  // long it waits for checkStale too, which runs once the lock is decided and
+  // ticks itself when the gap was fine - the interval can fire first on
+  // resume and would otherwise erase the gap it's asking about.
   useEffect(() => {
     const id = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
       const s = useActiveSession.getState();
       const a = s.active;
-      if (a?.runningSince != null && Date.now() - a.lastTick > 15_000) s.tick();
+      if (a?.runningSince == null) return;
+      const gap = Date.now() - a.lastTick;
+      if (gap > 15_000 && gap < STALE_GAP_MS) s.tick();
     }, 5_000);
     return () => clearInterval(id);
   }, []);
@@ -217,8 +229,13 @@ export default function TimerScreen() {
     const s = useActiveSession.getState();
     const a = s.active;
     if (!a || a.bookId !== bookId || a.runningSince == null || phaseRef.current !== 'timing') return;
-    // A new day *and* a real gap: reading from 23:55 past midnight is fine.
-    if (useLock.getState().locked || readingDayKey(a.lastTick) === readingDayKey() || Date.now() - a.lastTick < 60 * 60_000) return;
+    if (useLock.getState().locked) return;
+    // A new day *and* a real gap: reading from 23:55 past midnight is fine -
+    // then catch the heartbeat up, which held back for this answer.
+    if (readingDayKey(a.lastTick) === readingDayKey() || Date.now() - a.lastTick < STALE_GAP_MS) {
+      if (AppState.currentState === 'active') s.tick();
+      return;
+    }
     const tickSecs = sessionElapsedAtLastTick(a);
     const nowSecs = Math.min(MAX_SESSION_MINUTES * 60, sessionElapsed(a, Date.now()));
     s.pauseAtLastTick();
