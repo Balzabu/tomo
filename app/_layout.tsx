@@ -184,6 +184,7 @@ export default function RootLayout() {
               <Stack.Screen name="settings/day-start" options={{ title: tr('settings.dayStart') }} />
               <Stack.Screen name="settings/shelves" options={{ title: tr('settings.shelves') }} />
               <Stack.Screen name="settings/book-search" options={{ title: tr('settings.bookSearch') }} />
+              <Stack.Screen name="settings/fill" options={{ title: tr('fill.title') }} />
               <Stack.Screen name="settings/data" options={{ title: tr('settings.backupImport') }} />
               <Stack.Screen name="settings/security" options={{ title: tr('lock.settingsTitle') }} />
             </Stack>

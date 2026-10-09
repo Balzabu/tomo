@@ -12,6 +12,7 @@ import { CardShareModal } from '@/components/CardShareModal';
 import { formatDuration } from '@/lib/utils';
 import { useDayStartHour } from '@/lib/useTodayKey';
 import {
+  backlogSpan,
   DAY_SLOTS,
   moodPace,
   ratingDistribution,
@@ -212,15 +213,20 @@ export function MoodPaceCard({ books }: { books: Book[] }) {
 const LEVEL_EMOJI = { empty: '✨', tidy: '🧹', healthy: '📚', collector: '🏯', master: '🐉', unknown: '📚' } as const;
 
 /** The to-read pile: how long it lasts at your pace, and the tsundoku index. */
-export function TbrCard({ books, today }: { books: Book[]; today: string }) {
+export function TbrCard({ books, sessions, today }: { books: Book[]; sessions: ReadingSession[]; today: string }) {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
   const [share, setShare] = useState(false);
-  const f = useMemo(() => tbrForecast(books, today), [books, today]);
+  const f = useMemo(() => tbrForecast(books, today, sessions), [books, today, sessions]);
   if (f.count === 0 && f.perMonth === 0) return null;
   const monthYear = (key: string) => formatMonthYear(key, lang);
   const sep = numUnitSep(lang);
-  const years = f.index != null ? fmt1(f.index, lang) : '–';
+  // The backlog in years, months or days, whichever reads naturally.
+  const span = f.months != null ? backlogSpan(f.months) : undefined;
+  const spanValue = !span ? '–' : span.unit === 'years' ? fmt1(span.value, lang) : formatInt(span.value, lang);
+  const spanLabel = tr(span?.unit === 'months' ? 'tbr.indexMonths' : span?.unit === 'days' ? 'tbr.indexDays' : 'tbr.index', {
+    n: span?.value ?? 0,
+  });
   const level = `${LEVEL_EMOJI[f.level]} ${tr(`tbr.level.${f.level}`)}`;
   const pace = tr('tbr.pace', { n: fmt1(f.perMonth, lang) });
 
@@ -253,13 +259,16 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
               </View>
             ) : null}
             <View style={styles.tbrStat}>
-              <Text style={[styles.big, { color: t.colors.primary }]}>{years}</Text>
-              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.index', { n: years })}</Text>
+              <Text style={[styles.big, { color: t.colors.primary }]}>{spanValue}</Text>
+              <Text style={[styles.caption, { color: t.colors.textFaint }]}>{spanLabel}</Text>
             </View>
           </View>
           <Text style={[styles.takeaway, { color: t.colors.text }]}>
             {f.clearDate ? tr('tbr.forecast', { pace, date: monthYear(f.clearDate) }) : tr('tbr.noPace')}
           </Text>
+          {f.clearDate && f.provisional ? (
+            <Text style={[styles.caption, { color: t.colors.textFaint }]}>{tr('tbr.provisional')}</Text>
+          ) : null}
           <Text style={[styles.caption, { color: t.colors.textMuted }]}>{level}</Text>
         </>
       )}
@@ -274,7 +283,7 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
           // under a two-line heading.
           tiles: [
             { label: tr('tbr.books', { n: f.count }), value: formatInt(f.count, lang) },
-            { label: tr('tbr.index', { n: years }), value: years },
+            { label: spanLabel, value: spanValue },
           ],
           highlights: [
             ...(f.pages > 0 ? [{ label: tr('tbr.pagesLabel'), value: formatInt(f.pages, lang) }] : []),
@@ -287,7 +296,7 @@ export function TbrCard({ books, today }: { books: Book[]; today: string }) {
           `📚 ${tr('tbr.cardTitle')}`,
           `${formatInt(f.count, lang)}${sep}${tr('tbr.books', { n: f.count })}${f.pages ? ` · ${formatInt(f.pages, lang)}${sep}${tr('tbr.pages', { n: f.pages })}` : ''}`,
           f.clearDate ? labelValue(lang, tr('tbr.clearBy'), monthYear(f.clearDate)) : '',
-          `${labelValue(lang, tr('tbr.index'), years)} · ${level}`,
+          `${labelValue(lang, spanLabel, spanValue)} · ${level}`,
         ]
           .filter(Boolean)
           .join('\n')}

@@ -2,6 +2,22 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
+## 1.5.3 (unreleased)
+
+### Fixes
+
+- The reading reminder arrives once. On some phones (seen on a OnePlus 13) the system delivers it a moment early, and a second copy followed a few minutes later.
+- Reminders no longer pile up in the notification shade: a new one replaces the one you haven't dismissed, and an old one is taken down once you've read that day or a new day has started.
+- Statistics → **To-read pile**: your pace now counts only the time you've actually been tracking, up to the last 12 months. Before, a month of history was spread over a whole year, so someone who reads three books a month was told they read 0.3 and would clear a one-book pile months from now. While you have less than three months of history, the forecast says it's an early estimate.
+- The tsundoku index uses the unit that fits: a pile you'll finish in ten days shows "10 days of tsundoku" instead of "0.0 years", then months, and years from a year up.
+
+### Settings
+
+- Reorganised: **General** (theme, language), **Reading** (reminders, end of day), **Library** (shelves, book search, fill in missing details), **Privacy & security** (app lock, privacy policy) and **Data** (backup & import, clear all data).
+- **Backup & import**: both exports, the full backup (.json) and the library (.csv), are now together under **Export**, with one note explaining the difference. **Import** has a single **Import file** button, which recognises a Tomo backup as well as Bookmory, Openreads, Goodreads and StoryGraph files (there were two buttons doing the same thing).
+
+Install the APK below (Android 7.0+). It installs over v1.5.2.
+
 ## 1.5.2 (2026-10-05)
 
 ### Fixes

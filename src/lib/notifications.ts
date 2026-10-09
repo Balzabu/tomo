@@ -58,6 +58,9 @@ export async function hasNotificationPermission(): Promise<boolean> {
 }
 
 const REMINDER_PREFIX = 'reminder-';
+// One Android tag for every reminder (patches/expo-notifications): a new one
+// replaces the one still in the shade instead of stacking next to it.
+const REMINDER_DATA = { androidTag: 'reading-reminder' };
 
 export interface ReminderItem {
   /** local day key, used in the notification id */
@@ -85,7 +88,7 @@ export async function scheduleReminders(
       const { hour, minute, title, body } = plan.daily;
       await Notifications.scheduleNotificationAsync({
         identifier: `${REMINDER_PREFIX}daily`,
-        content: { title, body },
+        content: { title, body, data: REMINDER_DATA },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
           hour,
@@ -98,7 +101,7 @@ export async function scheduleReminders(
     for (const it of plan.items) {
       await Notifications.scheduleNotificationAsync({
         identifier: `${REMINDER_PREFIX}${it.day}`,
-        content: { title: it.title, body: it.body },
+        content: { title: it.title, body: it.body, data: REMINDER_DATA },
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: it.date, channelId: CHANNEL_ID },
       });
     }
@@ -116,6 +119,21 @@ export async function cancelReminders(): Promise<void> {
       all
         .filter((n) => n.identifier.startsWith(REMINDER_PREFIX) || !n.identifier.startsWith('session-'))
         .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/** Take down reminders already in the shade that were delivered before
+ *  `before` (epoch ms) - pass Infinity for all of them. */
+export async function dismissRemindersBefore(before: number): Promise<void> {
+  try {
+    const shown = await Notifications.getPresentedNotificationsAsync();
+    await Promise.all(
+      shown
+        .filter((n) => n.request.identifier.startsWith(REMINDER_PREFIX) && n.date < before)
+        .map((n) => Notifications.dismissNotificationAsync(n.request.identifier))
     );
   } catch {
     // ignore

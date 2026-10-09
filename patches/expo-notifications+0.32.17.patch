@@ -1,0 +1,90 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
+index 38f6fba..bdbda94 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
+@@ -106,7 +106,7 @@ open class ExpoPresentationDelegate(
+       val androidNotification = createNotification(notification, behavior)
+ 
+       NotificationManagerCompat.from(context).notify(
+-        notification.notificationRequest.identifier,
++        getNotifyTag(notification.notificationRequest),
+         getNotifyId(notification.notificationRequest),
+         androidNotification
+       )
+@@ -128,6 +128,11 @@ open class ExpoPresentationDelegate(
+     return ANDROID_NOTIFICATION_ID
+   }
+ 
++  // Tomo patch: `data.androidTag` lets several scheduled requests share one
++  // Android tag, so each new one replaces the previous instead of stacking.
++  protected open fun getNotifyTag(request: NotificationRequest): String =
++    request.content?.body?.optString("androidTag")?.takeIf { it.isNotEmpty() } ?: request.identifier
++
+   /**
+    * Callback called to fetch a collection of currently displayed notifications.
+    *
+@@ -149,7 +154,10 @@ open class ExpoPresentationDelegate(
+       } else {
+         // If the notification exists, let's assume it's ours, we have no reason to believe otherwise
+         val existingNotification = this.getAllPresentedNotifications().find { it.notificationRequest.identifier == identifier }
+-        NotificationManagerCompat.from(context).cancel(identifier, getNotifyId(existingNotification?.notificationRequest))
++        NotificationManagerCompat.from(context).cancel(
++          existingNotification?.notificationRequest?.let { getNotifyTag(it) } ?: identifier,
++          getNotifyId(existingNotification?.notificationRequest)
++        )
+       }
+     }
+   }
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoSchedulingDelegate.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoSchedulingDelegate.kt
+index eddd142..37b9b11 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoSchedulingDelegate.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoSchedulingDelegate.kt
+@@ -12,8 +12,18 @@ import expo.modules.notifications.notifications.model.NotificationRequest
+ import expo.modules.notifications.notifications.triggers.ChannelAwareTrigger
+ import expo.modules.notifications.service.NotificationsService
+ import expo.modules.notifications.service.interfaces.SchedulingDelegate
++import expo.modules.notifications.notifications.triggers.DailyTrigger
++import expo.modules.notifications.notifications.triggers.DateTrigger
++import expo.modules.notifications.notifications.triggers.MonthlyTrigger
++import expo.modules.notifications.notifications.triggers.WeeklyTrigger
++import expo.modules.notifications.notifications.triggers.YearlyTrigger
+ import java.io.IOException
+ import java.io.InvalidClassException
++import java.util.Calendar
++
++// Calendar triggers repeat at least daily: a "next" occurrence closer than
++// this to the delivery is the one that was just delivered early.
++private const val EARLY_DELIVERY_GUARD_MS = 60 * 60 * 1000L
+ 
+ class ExpoSchedulingDelegate(protected val context: Context) : SchedulingDelegate {
+   protected val store = SharedPreferencesNotificationsStore(context)
+@@ -73,7 +83,28 @@ class ExpoSchedulingDelegate(protected val context: Context) : SchedulingDelegat
+     try {
+       val notificationRequest: NotificationRequest = store.getNotificationRequest(identifier)!!
+       NotificationsService.receive(context, Notification(notificationRequest))
+-      NotificationsService.schedule(context, notificationRequest)
++      // Tomo patch: some OEMs (OxygenOS/ColorOS) can deliver an inexact alarm
++      // slightly before its time. Re-arming then would find the occurrence
++      // still "in the future" and fire it a second time minutes later.
++      when (val trigger = notificationRequest.trigger) {
++        // One-shot: delivered means done (directly, not via another broadcast).
++        is DateTrigger -> removeScheduledNotifications(listOf(identifier))
++        is DailyTrigger, is WeeklyTrigger, is MonthlyTrigger, is YearlyTrigger -> {
++          val next = Calendar.getInstance().apply { time = (trigger as SchedulableNotificationTrigger).nextTriggerDate()!! }
++          // The occurrence just delivered (early) is not the next one.
++          if (next.timeInMillis - System.currentTimeMillis() < EARLY_DELIVERY_GUARD_MS) {
++            when (trigger) {
++              is DailyTrigger -> next.add(Calendar.DATE, 1)
++              is WeeklyTrigger -> next.add(Calendar.WEEK_OF_YEAR, 1)
++              is MonthlyTrigger -> next.add(Calendar.MONTH, 1)
++              else -> next.add(Calendar.YEAR, 1)
++            }
++          }
++          store.saveNotificationRequest(notificationRequest)
++          setupAlarm(next.timeInMillis, NotificationsService.createNotificationTrigger(context, identifier))
++        }
++        else -> NotificationsService.schedule(context, notificationRequest)
++      }
+     } catch (e: ClassNotFoundException) {
+       Log.e("expo-notifications", "An exception occurred while triggering notification " + identifier + ", removing. " + e.message)
+       e.printStackTrace()

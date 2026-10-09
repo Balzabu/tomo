@@ -167,8 +167,11 @@ export interface TbrForecast {
   count: number;
   /** their known pages */
   pages: number;
-  /** finished books per month over the last 12 months (0 when none) */
+  /** finished books per month over your tracked history, up to the last 12
+   *  months (0 when none) */
   perMonth: number;
+  /** the pace rests on less than 3 months of history */
+  provisional: boolean;
   /** months to clear the pile at that pace (undefined when not estimable) */
   months?: number;
   /** local day the pile would be cleared */
@@ -178,28 +181,64 @@ export interface TbrForecast {
   level: 'empty' | 'tidy' | 'healthy' | 'collector' | 'master' | 'unknown';
 }
 
+const DAY_MS = 86_400_000;
+const MONTH_DAYS = 365.25 / 12;
+/** Shortest history the pace is measured over: a week with two finished books
+ *  isn't a pace of eight a month. */
+const MIN_PACE_DAYS = 30;
+const PROVISIONAL_DAYS = 90;
+
 /** How long the to-read pile lasts at your recent pace, and the tsundoku
- *  index (years of backlog). Only the last 12 months count, so an old binge
- *  doesn't promise a pace you no longer have. */
-export function tbrForecast(books: Book[], today: string = readingDayKey()): TbrForecast {
+ *  index (years of backlog). The pace covers the last 12 months, so an old
+ *  binge doesn't promise a pace you no longer have - or less, when your
+ *  tracked history is shorter: someone who started a month ago has read a
+ *  month's worth, not a year's. Added dates don't count as history (imports
+ *  stamp them all with the import day). */
+export function tbrForecast(books: Book[], today: string = readingDayKey(), sessions: ReadingSession[] = []): TbrForecast {
   const pile = books.filter((b) => b.status === 'want_to_read');
   const pages = pile.reduce((s, b) => s + (b.pageCount ?? 0), 0);
   const d = dateKeyToDate(today);
   const since = toDateKey(new Date(d.getFullYear() - 1, d.getMonth(), d.getDate(), 12).getTime());
   let finished = 0;
-  for (const b of books) for (const r of finishesOf(b)) if (readingDayKey(r.finishedAt) > since) finished++;
-  const perMonth = finished / 12;
-  const res: TbrForecast = { count: pile.length, pages, perMonth, level: 'unknown' };
+  let first = Infinity;
+  for (const b of books) {
+    if (b.startedAt) first = Math.min(first, b.startedAt);
+    for (const r of finishesOf(b)) {
+      first = Math.min(first, r.startedAt ?? r.finishedAt, r.finishedAt);
+      if (readingDayKey(r.finishedAt) > since) finished++;
+    }
+  }
+  for (const s of sessions) first = Math.min(first, s.startTime);
+  const firstDay = first === Infinity ? today : readingDayKey(first);
+  let months = 12;
+  let provisional = false;
+  if (firstDay > since) {
+    // Calendar days, both ends included (rounding absorbs DST's 23/25 h days).
+    const days = Math.round((d.getTime() - dateKeyToDate(firstDay).getTime()) / DAY_MS) + 1;
+    months = Math.max(days, MIN_PACE_DAYS) / MONTH_DAYS;
+    provisional = days < PROVISIONAL_DAYS;
+  }
+  const perMonth = finished / months;
+  const res: TbrForecast = { count: pile.length, pages, perMonth, provisional: provisional && finished > 0, level: 'unknown' };
   if (pile.length === 0) {
     res.level = 'empty';
     return res;
   }
   if (perMonth <= 0) return res;
-  const months = pile.length / perMonth;
-  res.months = months;
-  res.index = months / 12;
-  const clear = new Date(d.getFullYear(), d.getMonth(), d.getDate() + Math.round(months * 30.44), 12);
+  const left = pile.length / perMonth;
+  res.months = left;
+  res.index = left / 12;
+  const clear = new Date(d.getFullYear(), d.getMonth(), d.getDate() + Math.round(left * MONTH_DAYS), 12);
   res.clearDate = toDateKey(clear.getTime());
   res.level = res.index < 0.25 ? 'tidy' : res.index < 1 ? 'healthy' : res.index < 3 ? 'collector' : 'master';
   return res;
+}
+
+/** The backlog in the unit that reads naturally: "0.0 years" says nothing
+ *  about a pile that lasts ten days. Years (one decimal) from a year up,
+ *  whole months from a month up, whole days below that (at least 1). */
+export function backlogSpan(months: number): { unit: 'years' | 'months' | 'days'; value: number } {
+  if (Math.round(months) >= 12) return { unit: 'years', value: Math.round((months / 12) * 10) / 10 };
+  if (Math.round(months) >= 1) return { unit: 'months', value: Math.round(months) };
+  return { unit: 'days', value: Math.max(1, Math.round(months * MONTH_DAYS)) };
 }

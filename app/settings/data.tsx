@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Alert } from '@/components/AppAlert';
 import * as DocumentPicker from 'expo-document-picker';
@@ -6,7 +6,6 @@ import { AppData } from '@/types';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { formatDate, useTranslation } from '@/i18n';
-import { Button, ProgressBar } from '@/components/ui';
 import { Segmented } from '@/components/Segmented';
 import { SettingsBlockRow, SettingsFootnote, SettingsGroup, SettingsRow, SettingsSwitchRow } from '@/components/SettingsRow';
 import { exportCsv, exportData } from '@/lib/backup';
@@ -15,7 +14,6 @@ import { folderLabel, KEEP_CHOICES, pickBackupFolder, runBackup, useBackup } fro
 import { useSnackbar } from '@/store/useSnackbar';
 import { formatTimeOfDay } from '@/lib/utils';
 import { Ionicons } from '@expo/vector-icons';
-import { booksNeedingData, fillMissingData, FillProgress } from '@/services/catalogRefresh';
 import { withLockGrace } from '@/store/useLock';
 
 export default function DataSettings() {
@@ -26,43 +24,12 @@ export default function DataSettings() {
   const [howTo, setHowTo] = useState(false);
   // Which action is running: every button is disabled meanwhile (a second tap
   // used to open a second document picker), only the active one spins.
-  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | 'exportCsv' | null>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | 'exportCsv' | null>(null);
 
-  // Catalogue lookups (after a CSV import, or the "fill in" button) stop when
-  // the user leaves this screen, so they don't keep hitting the network.
-  const mounted = useRef(true);
+  // Catalogue lookups after an import stop when the user leaves this screen,
+  // so they don't keep hitting the network.
   const enrichAbort = useRef(new AbortController());
-  const fillAbort = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-      enrichAbort.current.abort();
-      fillAbort.current?.abort();
-    },
-    []
-  );
-
-  const books = useStore((s) => s.books);
-  const fillCandidates = useMemo(() => booksNeedingData(books).length, [books]);
-  const [fillProgress, setFillProgress] = useState<FillProgress | null>(null);
-
-  const onFill = async () => {
-    const ids = booksNeedingData(useStore.getState().books).map((b) => b.id);
-    if (ids.length === 0 || fillAbort.current) return;
-    const controller = new AbortController();
-    fillAbort.current = controller;
-    setFillProgress({ done: 0, total: ids.length, updated: 0 });
-    const res = await fillMissingData(ids, {
-      signal: controller.signal,
-      onProgress: (p) => mounted.current && setFillProgress(p),
-    });
-    fillAbort.current = null;
-    if (!mounted.current) return;
-    setFillProgress(null);
-    const counts = { updated: res.updated, total: res.total };
-    if (res.stopped === 'offline') Alert.alert(tr('fill.offlineTitle'), tr('fill.offlineMsg', counts));
-    else Alert.alert(tr('common.done'), tr('fill.doneMsg', counts));
-  };
+  useEffect(() => () => enrichAbort.current.abort(), []);
 
   const onExport = async () => {
     const s = useStore.getState();
@@ -112,9 +79,9 @@ export default function DataSettings() {
 
   // Pick any supported file; the flow recognises it (Tomo backup, Goodreads,
   // StoryGraph, Bookmory, Openreads) and asks before changing anything.
-  const pickAndImport = async (which: 'import' | 'csv') => {
+  const onImport = async () => {
     try {
-      setBusy(which);
+      setBusy('import');
       const res = await withLockGrace(() =>
         DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true })
       );
@@ -124,7 +91,6 @@ export default function DataSettings() {
       setBusy(null);
     }
   };
-  const onImport = () => void pickAndImport('import');
 
   // --- Automatic backups ---------------------------------------------------
   const toggleAuto = async (on: boolean) => {
@@ -158,8 +124,6 @@ export default function DataSettings() {
         when: tr('common.dateTime', { date: formatDate(backup.lastAt, lang), time: formatTimeOfDay(backup.lastAt) }),
       })
     : tr('autoBackup.never');
-
-  const onImportCsv = () => void pickAndImport('csv');
 
   const status = backup.lastError
     ? { text: tr('autoBackup.lastFailed'), tone: 'danger' as const }
@@ -197,16 +161,16 @@ export default function DataSettings() {
       </View>
 
       <View style={styles.section}>
-        <SettingsGroup title={tr('settings.backup')}>
-          <SettingsRow first icon="cloud-upload" label={tr('settings.export')} loading={busy === 'export'} disabled={busy != null && busy !== 'export'} onPress={onExport} />
-          <SettingsRow icon="cloud-download" label={tr('settings.import')} loading={busy === 'import'} disabled={busy != null && busy !== 'import'} onPress={onImport} />
+        <SettingsGroup title={tr('data.exportGroup')}>
+          <SettingsRow first icon="cloud-upload" label={tr('data.exportJson')} loading={busy === 'export'} disabled={busy != null && busy !== 'export'} onPress={onExport} />
+          <SettingsRow icon="document-text" label={tr('data.exportCsv')} loading={busy === 'exportCsv'} disabled={busy != null && busy !== 'exportCsv'} onPress={onExportCsv} />
         </SettingsGroup>
-        <SettingsFootnote>{tr('settings.backupDesc')}</SettingsFootnote>
+        <SettingsFootnote>{tr('data.exportDesc')}</SettingsFootnote>
       </View>
 
       <View style={styles.section}>
-        <SettingsGroup title={tr('import.title')}>
-          <SettingsRow first icon="library" label={tr('import.choose')} loading={busy === 'csv'} disabled={busy != null && busy !== 'csv'} onPress={onImportCsv} />
+        <SettingsGroup title={tr('data.importGroup')}>
+          <SettingsRow first icon="cloud-download" label={tr('data.importFile')} loading={busy === 'import'} disabled={busy != null && busy !== 'import'} onPress={() => void onImport()} />
           <SettingsRow icon="help-circle" label={tr('import.howTo')} trailing={howTo ? 'chevron-up' : 'chevron-down'} onPress={() => setHowTo((v) => !v)} />
           {howTo ? (
             <View style={[styles.howTo, { borderTopColor: t.colors.border }]}>
@@ -223,34 +187,7 @@ export default function DataSettings() {
             </View>
           ) : null}
         </SettingsGroup>
-        <SettingsFootnote>{tr('import.desc')}</SettingsFootnote>
-      </View>
-
-      <View style={styles.section}>
-        <SettingsGroup title={tr('data.libraryGroup')}>
-          {fillProgress ? (
-            <View style={styles.progress}>
-              <Text style={[styles.label, { color: t.colors.text }]}>{tr('fill.progress', { ...fillProgress })}</Text>
-              <ProgressBar progress={fillProgress.total ? fillProgress.done / fillProgress.total : 0} />
-              <View style={styles.progressFoot}>
-                <Text style={[styles.small, { color: t.colors.textFaint, flex: 1 }]}>{tr('fill.keepOpen')}</Text>
-                <Button label={tr('common.cancel')} variant="ghost" onPress={() => fillAbort.current?.abort()} />
-              </View>
-            </View>
-          ) : (
-            <SettingsRow
-              first
-              icon="sparkles"
-              label={tr('fill.title')}
-              value={fillCandidates > 0 ? String(fillCandidates) : undefined}
-              disabled={fillCandidates === 0}
-              onPress={onFill}
-            />
-          )}
-          <SettingsRow icon="document-text" label={tr('settings.exportCsv')} loading={busy === 'exportCsv'} disabled={busy != null && busy !== 'exportCsv'} onPress={onExportCsv} />
-        </SettingsGroup>
-        <SettingsFootnote>{fillCandidates > 0 || fillProgress ? tr('fill.desc') : tr('fill.none')}</SettingsFootnote>
-        <SettingsFootnote>{tr('settings.exportCsvDesc')}</SettingsFootnote>
+        <SettingsFootnote>{tr('data.importDesc')}</SettingsFootnote>
       </View>
     </ScrollView>
   );
@@ -262,6 +199,4 @@ const styles = StyleSheet.create({
   small: { fontSize: 13, lineHeight: 18 },
   howTo: { borderTopWidth: StyleSheet.hairlineWidth, padding: spacing.md, gap: spacing.md },
   tip: { flexDirection: 'row', gap: spacing.sm, padding: spacing.md, borderRadius: 12, alignItems: 'flex-start' },
-  progress: { padding: spacing.md, gap: spacing.sm },
-  progressFoot: { flexDirection: 'row', alignItems: 'center' },
 });

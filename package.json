@@ -60,5 +60,14 @@
     "babel-preset-expo": "^54.0.11",
     "patch-package": "^8.0.1",
     "typescript": "^5.3.3"
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
+      }
+    }
   }
 }

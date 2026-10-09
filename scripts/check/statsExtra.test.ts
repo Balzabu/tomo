@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ratingDistribution, topAuthors, readingRhythm, slotOfHour, moodPace, yearOverYear, tbrForecast } from '../../src/lib/statsExtra.ts';
+import { ratingDistribution, topAuthors, readingRhythm, slotOfHour, moodPace, yearOverYear, tbrForecast, backlogSpan } from '../../src/lib/statsExtra.ts';
 
 const at = (d: string, h = 12) => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd, h).getTime(); };
 const B = (id: string, extra: any = {}): any => ({ id, title: id, authors: ['A'], status: 'want_to_read', currentPage: 0, addedAt: 1, shelfIds: [], source: 'manual', ...extra });
@@ -40,6 +40,49 @@ const S = (date: string, hour: number, secs: number, pages = 10): any => ({ id: 
   assert.ok(f.clearDate! > '2027-03-25' && f.clearDate! < '2027-04-05');
   assert.equal(tbrForecast(pile, '2026-09-29').level, 'unknown');
   assert.equal(tbrForecast(read, '2026-09-29').level, 'empty');
+  assert.equal(f.provisional, false, 'a year of history is no estimate');
+}
+{
+  // Tracking since mid-September (2026-10-09 report): 3 books in four weeks
+  // is ~3 a month, not 3/12 - one book in the pile lasts days, not months.
+  const books = [
+    B('pile', { addedAt: at('2026-10-08') }),
+    fin('a', '2026-09-19', { startedAt: at('2026-09-12', 14) }),
+    fin('b', '2026-09-23', { startedAt: at('2026-09-19') }),
+    fin('c', '2026-10-08', { startedAt: at('2026-09-24') }),
+  ];
+  const f = tbrForecast(books, '2026-10-09');
+  // 28 tracked days, measured over the 30-day floor.
+  assert.ok(Math.abs(f.perMonth - 3 / (30 / (365.25 / 12))) < 1e-9, String(f.perMonth));
+  assert.equal(f.clearDate, '2026-10-19');
+  assert.equal(f.level, 'tidy');
+  assert.equal(f.provisional, true);
+  // The floor: two books finished this week are not eight a month.
+  const week = tbrForecast([B('p'), fin('x', '2026-10-05', { startedAt: at('2026-10-03') }), fin('y', '2026-10-08')], '2026-10-09');
+  assert.ok(Math.abs(week.perMonth - 2 / (30 / (365.25 / 12))) < 1e-9);
+  // Added dates are not history: a whole library imported today, one finish.
+  const imported = tbrForecast([B('p', { addedAt: at('2025-01-01') }), fin('x', '2026-10-01', { addedAt: at('2025-01-01') })], '2026-10-09');
+  assert.ok(Math.abs(imported.perMonth - 1 / (30 / (365.25 / 12))) < 1e-9);
+  // A session before any recorded start widens the window.
+  const withSession = tbrForecast(books, '2026-10-09', [S('2026-07-11', 21, 600)]);
+  assert.ok(Math.abs(withSession.perMonth - 3 / (91 / (365.25 / 12))) < 1e-9, String(withSession.perMonth));
+  assert.equal(withSession.provisional, false);
+  // Between three months and a year: the real span, no estimate label.
+  const half = tbrForecast([B('p'), fin('x', '2026-04-10', { startedAt: at('2026-04-01') }), fin('y', '2026-09-01')], '2026-09-30');
+  assert.ok(Math.abs(half.perMonth - 2 / (183 / (365.25 / 12))) < 1e-9);
+  assert.equal(half.provisional, false);
+  // Nothing finished yet: no pace, and nothing to call provisional.
+  const none = tbrForecast([B('p'), B('r', { status: 'reading', startedAt: at('2026-10-01') })], '2026-10-09');
+  assert.equal(none.level, 'unknown'); assert.equal(none.provisional, false);
+}
+{
+  // The backlog reads in the natural unit, not "0.0 years".
+  assert.deepEqual(backlogSpan(1 / 3.04), { unit: 'days', value: 10 }, 'one book at ~3 a month');
+  assert.deepEqual(backlogSpan(0.001), { unit: 'days', value: 1 }, 'never "0 days" for a pile that exists');
+  assert.deepEqual(backlogSpan(0.97), { unit: 'months', value: 1 });
+  assert.deepEqual(backlogSpan(4.4), { unit: 'months', value: 4 });
+  assert.deepEqual(backlogSpan(11.6), { unit: 'years', value: 1 }, '12 months reads as a year');
+  assert.deepEqual(backlogSpan(30), { unit: 'years', value: 2.5 });
 }
 console.log('statsExtra: all assertions passed');
 {

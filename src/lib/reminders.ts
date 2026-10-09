@@ -4,9 +4,9 @@ import { useStore } from '@/store/useStore';
 import { resolveLang, translate } from '@/i18n';
 import { computeStats } from '@/lib/stats';
 import { dateKeyToDate, toDateKey } from '@/lib/utils';
-import { readingDayKey, sessionDay } from '@/lib/readingDay';
+import { readingDayKey, readingDayStart, sessionDay } from '@/lib/readingDay';
 import { reminderDays } from '@/lib/reminderPlan';
-import { cancelReminders, ReminderItem, scheduleReminders } from '@/lib/notifications';
+import { cancelReminders, dismissRemindersBefore, ReminderItem, scheduleReminders } from '@/lib/notifications';
 import { privateContentAllowed } from '@/store/useLock';
 import type { Book, ReadingSession } from '@/types';
 
@@ -20,6 +20,8 @@ let chain: Promise<unknown> = Promise.resolve();
  * those - so it is a month of one-off reminders, re-planned whenever the app
  * runs and whenever today's first session is saved (which drops today's).
  * Today's reminder is personal: your streak at stake, or the book you're in.
+ * A reminder still in the shade is taken down once it's out of date: it's
+ * from an earlier day, or today has been read since.
  */
 export function syncReminders(): Promise<boolean> {
   const run = chain.then(syncOnce, syncOnce);
@@ -34,10 +36,14 @@ async function syncOnce(): Promise<boolean> {
   const channel = tr('notif.channelReminders');
   if (!st.reminderEnabled) {
     await cancelReminders();
+    await dismissRemindersBefore(Infinity);
     return true;
   }
 
   const { books, sessions } = useStore.getState();
+  const today = readingDayKey();
+  const readToday = sessions.some((s) => sessionDay(s) === today);
+  await dismissRemindersBefore(readToday ? Infinity : readingDayStart(today));
   // With the app lock on, the lock screen must not show what you're reading.
   const reading = !privateContentAllowed() ? undefined : mostRecentlyRead(books, sessions);
 
@@ -51,8 +57,6 @@ async function syncOnce(): Promise<boolean> {
     return ok;
   }
 
-  const today = readingDayKey();
-  const readToday = sessions.some((s) => sessionDay(s) === today);
   const streak = computeStats(books, sessions).currentStreak;
   // The streak is known for the next reminder only: today's, or - once today
   // is read - tomorrow's (the plan is redone whenever the app runs).

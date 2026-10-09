@@ -142,7 +142,7 @@ export default function StatsScreen() {
 
       <YearCompareCard books={books} sessions={sessions} today={todayKey} />
       <RhythmCard sessions={sessions} />
-      <TbrCard books={books} today={todayKey} />
+      <TbrCard books={books} sessions={sessions} today={todayKey} />
       <RatingsCard books={books} />
       <AuthorsCard books={books} />
       <MoodPaceCard books={books} />

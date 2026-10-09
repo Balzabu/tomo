@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Alert } from '@/components/AppAlert';
 import { router, type Href } from 'expo-router';
@@ -16,11 +17,14 @@ import { clearData } from '@/lib/storage';
 import { clearCovers } from '@/lib/covers';
 import { clearReadingSelections } from '@/widgets/widget-prefs';
 import { dayStartLabel } from '@/lib/readingDay';
+import { booksNeedingData } from '@/services/catalogRefresh';
 
 export default function SettingsScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const shelfCount = useStore((s) => s.shelves.length);
+  const books = useStore((s) => s.books);
+  const fillCandidates = useMemo(() => booksNeedingData(books).length, [books]);
   const replaceAll = useStore((s) => s.replaceAll);
   const scheme = useSettings((s) => s.scheme);
   const language = useSettings((s) => s.language);
@@ -71,7 +75,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 32 }}>
-      <SettingsGroup title={tr('settings.groupAppearance')}>
+      <SettingsGroup title={tr('settings.groupGeneral')}>
         <SettingsRow first icon="color-palette" label={tr('settings.theme')} value={themeValue} onPress={() => go('/settings/appearance')} />
         <SettingsRow
           icon="language"
@@ -94,14 +98,26 @@ export default function SettingsScreen() {
           value={dayStartLabel(dayStartHour, tr('settings.dayStartMidnight'))}
           onPress={() => go('/settings/day-start')}
         />
-        <SettingsRow icon="bookmarks" label={tr('settings.shelves')} value={String(shelfCount)} onPress={() => go('/settings/shelves')} />
+      </SettingsGroup>
+
+      <SettingsGroup title={tr('settings.groupLibrary')}>
+        <SettingsRow first icon="bookmarks" label={tr('settings.shelves')} value={String(shelfCount)} onPress={() => go('/settings/shelves')} />
         <SettingsRow icon="search" label={tr('settings.bookSearch')} onPress={() => go('/settings/book-search')} />
+        <SettingsRow
+          icon="sparkles"
+          label={tr('fill.title')}
+          value={fillCandidates > 0 ? String(fillCandidates) : undefined}
+          onPress={() => go('/settings/fill')}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title={tr('settings.groupPrivacy')}>
+        <SettingsRow first icon="lock-closed" label={tr('lock.settingsTitle')} value={lockEnabled ? tr('lock.on') : tr('lock.off')} onPress={() => go('/settings/security')} />
+        <SettingsRow icon="shield-checkmark" label={tr('settings.privacy')} onPress={() => Linking.openURL(LINKS.privacy)} />
       </SettingsGroup>
 
       <SettingsGroup title={tr('settings.groupData')}>
         <SettingsRow first icon="cloud-upload" label={tr('settings.backupImport')} onPress={() => go('/settings/data')} />
-        <SettingsRow icon="lock-closed" label={tr('lock.settingsTitle')} value={lockEnabled ? tr('lock.on') : tr('lock.off')} onPress={() => go('/settings/security')} />
-        <SettingsRow icon="shield-checkmark" label={tr('settings.privacy')} onPress={() => Linking.openURL(LINKS.privacy)} />
         <SettingsRow icon="trash" label={tr('settings.clearData')} danger onPress={onClear} />
       </SettingsGroup>
 
