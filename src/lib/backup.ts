@@ -167,6 +167,8 @@ function sanitizeSession(raw: unknown): ReadingSession | null {
     pagesRead: Math.max(0, asNumber(r.pagesRead)),
     note: asOptionalString(r.note, MAX_TEXT),
     date,
+    // Tells the reading-rhythm stats which sessions have a real clock time.
+    source: r.source === 'timer' || r.source === 'manual' ? r.source : undefined,
     updatedAt: asTime(r.updatedAt),
   };
 }

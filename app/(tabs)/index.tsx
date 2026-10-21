@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useStore } from '@/store/useStore';
 import { useSettings } from '@/store/useSettings';
 import { useSnackbar } from '@/store/useSnackbar';
+import { Alert } from '@/components/AppAlert';
 import {
   Book,
   LIBRARY_SORTS,
@@ -168,20 +169,36 @@ export default function LibraryScreen() {
     if (selectMode && selected.size === 0) setSelectMode(false);
   }, [selectMode, selected]);
 
+  // Confirmed first, like every other destructive action: the Undo snackbar
+  // alone is easy to miss, and a slip here can take a whole shelf with it.
   const onBulkDelete = () => {
     const ids = [...selected];
     if (!ids.length) return;
-    const removed = deleteBooks(ids);
-    exitSelect();
-    showSnackbar(
-      ids.length === 1 ? tr('book.deletedOne') : tr('book.deletedMany', { n: ids.length }),
-      {
-        actionLabel: tr('common.undo'),
-        onAction: () => restoreBooks(removed),
-        // Cover files are NOT deleted here: the delete may still be un-persisted
-        // (or undone), and launch-time reconcileCovers already reclaims files no
-        // longer referenced by the *saved* data - the only source of truth.
-      }
+    const one = ids.length === 1 ? books.find((b) => b.id === ids[0]) : undefined;
+    Alert.alert(
+      tr('book.deleteManyTitle', { n: ids.length }),
+      one ? tr('book.deleteMsg', { title: one.title }) : tr('book.deleteManyMsg'),
+      [
+        { text: tr('common.cancel'), style: 'cancel' },
+        {
+          text: tr('common.delete'),
+          style: 'destructive',
+          onPress: () => {
+            const removed = deleteBooks(ids);
+            exitSelect();
+            showSnackbar(
+              ids.length === 1 ? tr('book.deletedOne') : tr('book.deletedMany', { n: ids.length }),
+              {
+                actionLabel: tr('common.undo'),
+                onAction: () => restoreBooks(removed),
+                // Cover files are NOT deleted here: the delete may still be un-persisted
+                // (or undone), and launch-time reconcileCovers already reclaims files no
+                // longer referenced by the *saved* data - the only source of truth.
+              }
+            );
+          },
+        },
+      ]
     );
   };
 
@@ -451,7 +468,7 @@ export default function LibraryScreen() {
           <Text style={[styles.selectCount, { color: t.colors.text }]}>
             {tr('select.selected', { n: selected.size })}
           </Text>
-          <Pressable onPress={toggleAll} hitSlop={8} style={[styles.selectBtn, styles.selectAll]}>
+          <Pressable onPress={toggleAll} hitSlop={8} style={[styles.selectBtn, styles.selectAll]} accessibilityRole="button" accessibilityState={{ checked: allSelected }}>
             <Ionicons
               name={allSelected ? 'checkbox' : 'checkbox-outline'}
               size={20}
@@ -463,6 +480,8 @@ export default function LibraryScreen() {
             onPress={onBulkDelete}
             disabled={selected.size === 0}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: selected.size === 0 }}
             style={[styles.selectBtn, { opacity: selected.size === 0 ? 0.4 : 1 }]}
           >
             <Ionicons name="trash" size={20} color={t.colors.danger} />
@@ -479,7 +498,7 @@ export default function LibraryScreen() {
         title={tr('filters.heading')}
         right={
           activeFilters > 0 ? (
-            <Pressable onPress={clearFilters} hitSlop={8}>
+            <Pressable onPress={clearFilters} hitSlop={8} accessibilityRole="button">
               <Text style={[styles.readBtnTxt, { color: t.colors.primary }]}>{tr('filters.clear')}</Text>
             </Pressable>
           ) : null

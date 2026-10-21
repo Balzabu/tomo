@@ -77,10 +77,14 @@ export function readingRhythm(sessions: ReadingSession[]): {
   const weekdayOf = new Map<string, number>();
   for (const s of sessions) {
     if (s.durationSeconds <= 0) continue;
-    // Sessions added by hand get a nominal 12:00:00.000 start - they say
-    // nothing about the hour you read, only the weekday.
+    // Sessions added by hand say nothing about the hour you read, only the
+    // weekday: flagged since 1.5.5; older ones (and imports) are told by
+    // their nominal 12:00:00.000 start - which placeOnReadingDay may have
+    // moved earlier, so the flag is what the rhythm relies on from now on.
     const d = new Date(s.startTime);
-    const manual = d.getHours() === 12 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+    const manual =
+      s.source === 'manual' ||
+      (s.source == null && d.getHours() === 12 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0);
     const day = sessionDay(s);
     let wd = weekdayOf.get(day);
     if (wd === undefined) {

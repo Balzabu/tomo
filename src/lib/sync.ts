@@ -5,6 +5,11 @@
 // the store (stampChanges) whenever an item's object identity changes, and a
 // deletion leaves a tombstone. A merge can then keep the newer copy of each
 // item and never resurrect something that was deleted after the backup.
+//
+// A tombstone names the deleted item by id and by its natural key (the same
+// key the merge matches items on when their ids differ): the copy of a
+// session on another device has another id, so the id alone would let the
+// next merge add it back.
 import type { AppData, Book, BookNote, Goal, ReadingSession, Shelf, Tombstone } from '@/types';
 import { isbnKey } from './isbn.ts';
 
@@ -132,19 +137,18 @@ export function stampChanges<S extends AppData>(prev: S, patch: Partial<S>, now:
     (out as Record<Tracked, unknown>)[coll] = stamped;
     const current: Tombstone[] = deleted ?? (patch.deleted as Tombstone[] | undefined) ?? prev.deleted ?? [];
     const back = new Set(backItems.map((x) => x.id));
-    // A book added again (undo, or re-added by hand) also clears the key
-    // tombstones of its earlier copy - not those of a different edition.
-    // key -> ISBN keys of the re-added books holding it ('' = no ISBN)
+    // An item added again (undo, or re-created by hand) also clears the key
+    // tombstones of its earlier copy - for a book, not those of a different
+    // edition. key -> ISBN keys of the re-added books holding it ('' = no
+    // ISBN, and every other collection)
     const backKeys = new Map<string, string[]>();
-    if (coll === 'books') {
-      for (const x of backItems) {
-        const keys = bookKeys(x as unknown as Book);
-        const ik = isbnKeyOf(keys) ?? '';
-        for (const k of keys) {
-          const list = backKeys.get(k);
-          if (list) list.push(ik);
-          else backKeys.set(k, [ik]);
-        }
+    for (const x of backItems) {
+      const keys = keysOf(coll, x);
+      const ik = isbnKeyOf(keys) ?? '';
+      for (const k of keys) {
+        const list = backKeys.get(k);
+        if (list) list.push(ik);
+        else backKeys.set(k, [ik]);
       }
     }
     const revives = (t: Tombstone) =>
@@ -152,18 +156,15 @@ export function stampChanges<S extends AppData>(prev: S, patch: Partial<S>, now:
     const revived = current.some(revives);
     if (gone.length || revived) {
       const list = current.filter((t) => !revives(t));
-      // A key another book still holds (a duplicate copy, the same title in
-      // another edition) must not go into the tombstone: a merge would take
-      // it as the deletion of that surviving book.
+      // A key another item still holds (a duplicate copy, the same title in
+      // another edition, two identical manual sessions) must not go into the
+      // tombstone: a merge would take it as the deletion of that surviving
+      // item.
       let liveKeys: Set<string> | null = null;
       for (const x of gone) {
-        if (coll !== 'books') {
-          list.push({ id: x.id, deletedAt: now });
-          continue;
-        }
-        if (!liveKeys) liveKeys = new Set(stamped.flatMap((b) => bookKeys(b as unknown as Book)));
+        if (!liveKeys) liveKeys = new Set(stamped.flatMap((b) => keysOf(coll, b)));
         const live = liveKeys;
-        const keys = bookKeys(x as unknown as Book).filter((k) => !live.has(k));
+        const keys = keysOf(coll, x).filter((k) => !live.has(k));
         list.push(keys.length ? { id: x.id, deletedAt: now, keys } : { id: x.id, deletedAt: now });
       }
       deleted = list;
@@ -202,7 +203,7 @@ function mergeCollection<T extends Item>(
   incoming: T[],
   keyOf: (x: T) => string | undefined,
   remap: (x: T) => T | null
-): { items: T[]; idMap: Map<string, string>; added: number; updated: number } {
+): { items: T[]; idMap: Map<string, string>; matched: Set<string>; added: number; updated: number } {
   const items = local.slice();
   const index = new Map<string, number>(); // id -> position
   // Natural keys of local items only: two distinct items of the backup must
@@ -216,6 +217,8 @@ function mergeCollection<T extends Item>(
     if (k && !byKey.has(k) && !incomingIds.has(x.id)) byKey.set(k, i);
   });
   const idMap = new Map<string, string>();
+  // local items some backup item matched (by id or key)
+  const matched = new Set<string>();
   let added = 0;
   let updated = 0;
   for (const raw of incoming) {
@@ -226,6 +229,7 @@ function mergeCollection<T extends Item>(
     if (pos != null) {
       const cur = items[pos];
       idMap.set(raw.id, cur.id);
+      matched.add(cur.id);
       // Tie goes to this device: an unchanged backup must be a no-op.
       if (ts(inc) > ts(cur)) {
         items[pos] = { ...inc, id: cur.id };
@@ -238,7 +242,7 @@ function mergeCollection<T extends Item>(
     items.push(inc);
     added++;
   }
-  return { items, idMap, added, updated };
+  return { items, idMap, matched, added, updated };
 }
 
 const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase();
@@ -262,6 +266,46 @@ export function bookKeys(b: Book): string[] {
   return keys;
 }
 
+// Natural keys of the other collections - what the merge matches on when the
+// ids differ (a reinstall, the same import done on two devices) and what a
+// tombstone carries. They must come out the same on every device: nothing
+// locale- or clock-dependent goes in, and the only foreign id is the book's,
+// which the merge translates (see remapBookRef and remapTombKey).
+
+/** Length and a 32-bit FNV-1a hash of the text: a note's key goes into its
+ *  tombstone, which must neither grow with the note nor keep the words of a
+ *  deleted note around for two years. */
+function textKey(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return `${s.length}:${(h >>> 0).toString(36)}`;
+}
+
+const shelfKey = (s: Shelf) => `n:${norm(s.name)}`;
+// Everything that tells two sessions apart: manual ones share a nominal noon
+// start, so bookId|startTime alone would merge a day's sessions.
+const sessionKey = (s: ReadingSession) => `s:${s.bookId}|${s.startTime}|${s.endTime}|${s.durationSeconds}|${s.pagesRead}|${s.endPage ?? ''}`;
+const noteKey = (n: BookNote) => `nt:${n.bookId}|${n.type}|${textKey(n.text.trim())}`;
+const goalKey = (g: Goal) =>
+  g.period === 'custom' ? `c:${norm(g.name)}|${g.start}|${g.end}|${g.metric}` : `r:${g.metric}|${g.period}`;
+
+/** The keys a tombstone of `coll` carries - the same ones mergeCollection
+ *  (and the book matching in mergeData) look items up by. */
+function keysOf(coll: Tracked, x: Item): string[] {
+  switch (coll) {
+    case 'books':
+      return bookKeys(x as unknown as Book);
+    case 'sessions':
+      return [sessionKey(x as unknown as ReadingSession)];
+    case 'notes':
+      return [noteKey(x as unknown as BookNote)];
+    case 'shelves':
+      return [shelfKey(x as unknown as Shelf)];
+    case 'goals':
+      return [goalKey(x as unknown as Goal)];
+  }
+}
+
 /**
  * Merge a backup into the current library. Items are matched by id, then by
  * a natural key (ISBN or title+author for books, name for shelves, …) so a
@@ -274,12 +318,15 @@ export function mergeData(local: AppData, incoming: AppData, now: number = Date.
   const tomb = new Map<string, number>();
   const mergedTombs = new Map<string, Tombstone>();
   // Key tombstones by origin (key -> tombstones carrying it): each side's
-  // deletions only reach books the other side brings - see bookAlive.
+  // deletions only reach items the other side brings - see survives.
   const localByKey = new Map<string, Tombstone[]>();
   const incomingByKey = new Map<string, Tombstone[]>();
-  const collect = (list: Tombstone[], byKey: Map<string, Tombstone[]>) => {
+  const collect = (list: Tombstone[], byKey: Map<string, Tombstone[]>, remapKey: (k: string) => string) => {
     for (const raw of list) {
-      const t = { ...raw, deletedAt: Math.min(raw.deletedAt, now) }; // no deletions "from the future"
+      // no deletions "from the future"; an old backup's tombstones carry no
+      // keys and keep working by id
+      const t: Tombstone = { id: raw.id, deletedAt: Math.min(raw.deletedAt, now) };
+      if (raw.keys) t.keys = raw.keys.map(remapKey);
       tomb.set(t.id, Math.max(tomb.get(t.id) ?? 0, t.deletedAt));
       for (const k of t.keys ?? []) {
         const at = byKey.get(k);
@@ -290,14 +337,13 @@ export function mergeData(local: AppData, incoming: AppData, now: number = Date.
       mergedTombs.set(t.id, { id: t.id, deletedAt: Math.max(prev?.deletedAt ?? 0, t.deletedAt), ...(t.keys || prev?.keys ? { keys: t.keys ?? prev?.keys } : {}) });
     }
   };
-  collect(local.deleted ?? [], localByKey);
-  collect(incoming.deleted ?? [], incomingByKey);
+  collect(local.deleted ?? [], localByKey, (k) => k);
   const alive = <T extends Item>(x: T) => {
     const d = tomb.get(x.id);
     return d == null || ts(x) > d;
   };
 
-  const shelves = mergeCollection<Shelf>(local.shelves, incoming.shelves, (s) => `n:${norm(s.name)}`, (s) => s);
+  const shelves = mergeCollection<Shelf>(local.shelves, incoming.shelves, shelfKey, (s) => s);
 
   // Books match on any of their keys (ISBN first, then title|author) - keys
   // of local books only, and not of one whose own id is in the backup (the
@@ -350,62 +396,58 @@ export function mergeData(local: AppData, incoming: AppData, now: number = Date.
     localBooks.push(inc);
   }
 
+  // The backup's session and note tombstones name its own book ids: put them
+  // in this library's id space, as remapBookRef does for the sessions and
+  // notes themselves. A book the backup no longer has keeps its id (nothing
+  // here can match it anyway).
+  const remapTombKey = (k: string) => {
+    const m = /^(s|nt):([^|]*)\|/.exec(k);
+    const bookId = m ? bookMap.get(m[2]) : undefined;
+    return m && bookId && bookId !== m[2] ? `${m[1]}:${bookId}${k.slice(m[0].length - 1)}` : k;
+  };
+  collect(incoming.deleted ?? [], incomingByKey, remapTombKey);
+
   const localIds = new Set(local.books.map((b) => b.id));
-  // A deletion made on another device also reaches the same book here under
-  // a different id (matched by ISBN or title+author) - but only a book it
-  // could have meant: a backup's key tombstones reach local books the backup
-  // has no copy of, this device's reach books that come only from the
-  // backup. A book kept on the side that recorded the deletion (a duplicate
-  // copy, another edition) is never taken for the deleted one.
-  const bookAlive = (b: Book) => {
-    if (!alive(b)) return false;
-    const byKey = localIds.has(b.id) ? (matchedLocal.has(b.id) ? null : incomingByKey) : localByKey;
+  // A deletion made on another device also reaches the same item here under
+  // a different id (matched by ISBN or title+author, a shelf's name, a
+  // session's book and times, …) - but only an item it could have meant: a
+  // backup's key tombstones reach local items the backup has no copy of,
+  // this device's reach items that come only from the backup. An item kept
+  // on the side that recorded the deletion (a duplicate copy, another
+  // edition) is never taken for the deleted one.
+  const survives = (x: Item, keys: string[], isLocal: boolean, matched: boolean) => {
+    if (!alive(x)) return false;
+    const byKey = isLocal ? (matched ? null : incomingByKey) : localByKey;
     if (!byKey) return true;
-    const keys = bookKeys(b);
     const ik = isbnKeyOf(keys);
-    return keys.every((k) => (byKey.get(k) ?? []).every((t) => !keyApplies(t, k, ik) || ts(b) > t.deletedAt));
+    return keys.every((k) => (byKey.get(k) ?? []).every((t) => !keyApplies(t, k, ik) || ts(x) > t.deletedAt));
   };
 
   const remapBookRef = <T extends { bookId: string }>(x: T): T | null => {
     const bookId = bookMap.get(x.bookId);
     return bookId ? { ...x, bookId } : null;
   };
-  const sessions = mergeCollection<ReadingSession>(
-    local.sessions,
-    incoming.sessions,
-    // Everything that tells two sessions apart: manual ones share a nominal
-    // noon start, so bookId|startTime alone would merge a day's sessions.
-    (s) => `${s.bookId}|${s.startTime}|${s.endTime}|${s.durationSeconds}|${s.pagesRead}|${s.endPage ?? ''}`,
-    remapBookRef
-  );
-  const notes = mergeCollection<BookNote>(
-    local.notes,
-    incoming.notes,
-    (n) => `${n.bookId}|${n.type}|${n.text.trim()}`,
-    remapBookRef
-  );
-  const goals = mergeCollection<Goal>(
-    local.goals,
-    incoming.goals,
-    (g) => (g.period === 'custom' ? `c:${norm(g.name)}|${g.start}|${g.end}|${g.metric}` : `r:${g.metric}|${g.period}`),
-    (g) => g
-  );
+  const sessions = mergeCollection<ReadingSession>(local.sessions, incoming.sessions, sessionKey, remapBookRef);
+  const notes = mergeCollection<BookNote>(local.notes, incoming.notes, noteKey, remapBookRef);
+  const goals = mergeCollection<Goal>(local.goals, incoming.goals, goalKey, (g) => g);
 
   // Apply deletions, then drop anything left pointing at a missing parent.
   let removed = 0;
-  const keep = <T extends Item>(list: T[]) =>
-    list.filter((x) => {
-      const ok = alive(x);
+  const keep = <T extends Item>(merged: { items: T[]; matched: Set<string> }, before: T[], keyOf: (x: T) => string) => {
+    const ids = new Set(before.map((x) => x.id));
+    return merged.items.filter((x) => {
+      const ok = survives(x, [keyOf(x)], ids.has(x.id), merged.matched.has(x.id));
       if (!ok) removed++;
       return ok;
     });
+  };
   const booksOut = localBooks.filter((b) => {
-    const ok = bookAlive(b);
+    const ok = survives(b, bookKeys(b), localIds.has(b.id), matchedLocal.has(b.id));
     if (!ok) removed++;
     return ok;
   });
   const bookIds = new Set(booksOut.map((b) => b.id));
-  const shelvesOut = keep(shelves.items);
+  const shelvesOut = keep(shelves, local.shelves, shelfKey);
   const shelfIds = new Set(shelvesOut.map((s) => s.id));
   // New books first, like any add; existing books keep their order.
   const orderedBooks = [
@@ -415,10 +457,10 @@ export function mergeData(local: AppData, incoming: AppData, now: number = Date.
 
   const data: AppData = {
     books: orderedBooks,
-    sessions: keep(sessions.items).filter((s) => bookIds.has(s.bookId)),
-    notes: keep(notes.items).filter((n) => bookIds.has(n.bookId)),
+    sessions: keep(sessions, local.sessions, sessionKey).filter((s) => bookIds.has(s.bookId)),
+    notes: keep(notes, local.notes, noteKey).filter((n) => bookIds.has(n.bookId)),
     shelves: shelvesOut,
-    goals: keep(goals.items),
+    goals: keep(goals, local.goals, goalKey),
     deleted: pruneTombstones([...mergedTombs.values()], now),
     version: Math.max(local.version, incoming.version),
   };

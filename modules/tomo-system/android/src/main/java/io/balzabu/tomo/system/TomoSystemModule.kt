@@ -97,12 +97,17 @@ class TomoSystemModule : Module() {
     }
   }
 
-  // Nothing Tomo imports comes close; larger files would only strain memory
-  // once read into JS.
-  private val maxSharedBytes = 32L * 1024 * 1024
+  // The same limit as the file picker (MAX_BYTES in src/lib/importFile.ts):
+  // a share must not be refused where the picker accepts the file. Larger
+  // files would only strain memory once read into JS.
+  private val maxSharedBytes = 128L * 1024 * 1024
   private val copier = Executors.newSingleThreadExecutor()
 
-  private fun copyShared(intent: Intent?): Map<String, String>? {
+  // A result the JS side can report ("file too large") rather than a silent
+  // null, which it can't tell from "nothing was shared".
+  private fun tooLarge(name: String): Map<String, Any> = mapOf("uri" to "", "name" to name, "tooLarge" to true)
+
+  private fun copyShared(intent: Intent?): Map<String, Any>? {
     if (intent?.action != Intent.ACTION_SEND) return null
     val ctx = appContext.reactContext ?: return null
     return try {
@@ -121,9 +126,16 @@ class TomoSystemModule : Module() {
       // visible, which is fine - it isn't ours.)
       if (ctx.packageManager.resolveContentProvider(authority, 0)?.packageName == ctx.packageName) return null
       var name = "shared"
-      ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-        if (c.moveToFirst() && !c.isNull(0)) name = c.getString(0)
+      var size = -1L
+      ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+        if (c.moveToFirst()) {
+          if (!c.isNull(0)) name = c.getString(0)
+          if (!c.isNull(1)) size = c.getLong(1)
+        }
       }
+      // Known to be too big: say so without copying 128 MB first. (A provider
+      // may not know the size - streamed downloads - so the copy checks too.)
+      if (size > maxSharedBytes) return tooLarge(name)
       val dir = File(ctx.cacheDir, "shared-imports").apply { mkdirs() }
       // Earlier shares are done with after an hour; a new one gets its own
       // file so two quick shares can't overwrite each other.
@@ -142,7 +154,7 @@ class TomoSystemModule : Module() {
             // Nothing Tomo imports is this big: stop instead of filling the cache.
             if (total > maxSharedBytes) {
               out.delete()
-              return null
+              return tooLarge(name)
             }
             output.write(buf, 0, n)
           }

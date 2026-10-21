@@ -166,7 +166,8 @@ export function NoteModal({
       <View style={[styles.pageRow, { backgroundColor: t.colors.cardAlt }]}>
         <Ionicons name="bookmark-outline" size={18} color={t.colors.primary} />
         <Text style={[styles.pageLabel, { color: t.colors.text }]}>{tr('notes.page')}</Text>
-        <Pressable onPress={() => setPage(String(Math.max(1, pageNum - 1)))} hitSlop={6} style={styles.step} accessibilityLabel="-1">
+        {/* 30 dp steppers: the hit slop brings them to the 44 dp touch target. */}
+        <Pressable onPress={() => setPage(String(Math.max(1, pageNum - 1)))} hitSlop={7} style={styles.step} accessibilityRole="button" accessibilityLabel={tr('notes.pagePrev')}>
           <Ionicons name="remove" size={18} color={t.colors.textMuted} />
         </Pressable>
         <TextInput
@@ -178,7 +179,7 @@ export function NoteModal({
           selectTextOnFocus
           style={[styles.pageInput, { color: t.colors.text, backgroundColor: t.colors.card }]}
         />
-        <Pressable onPress={() => setPage(String(pageNum + 1))} hitSlop={6} style={styles.step} accessibilityLabel="+1">
+        <Pressable onPress={() => setPage(String(pageNum + 1))} hitSlop={7} style={styles.step} accessibilityRole="button" accessibilityLabel={tr('notes.pageNext')}>
           <Ionicons name="add" size={18} color={t.colors.textMuted} />
         </Pressable>
       </View>

@@ -12,9 +12,11 @@ export interface DynamicPalettes {
 }
 
 export interface SharedFile {
-  /** file:// copy in the app cache */
+  /** file:// copy in the app cache - empty when `tooLarge` */
   uri: string;
   name: string;
+  /** the file was over the import size limit and was not copied */
+  tooLarge?: boolean;
 }
 
 interface TomoSystemNative {

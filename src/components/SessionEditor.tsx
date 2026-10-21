@@ -69,7 +69,9 @@ export function SessionEditor({
     if (session) {
       setStartPage(session.startPage != null ? String(session.startPage) : '');
       setEndPage(session.endPage != null ? String(session.endPage) : '');
-      setMinutes(String(Math.max(1, Math.round(session.durationSeconds / 60))));
+      // An untimed session (progress logged by hand) stays untimed: seeding a
+      // minute would turn it into a 60 s "paced" session on the next save.
+      setMinutes(session.durationSeconds > 0 ? String(Math.max(1, Math.round(session.durationSeconds / 60))) : '0');
       setDayTs(dateKeyToDate(sessionDay(session)).getTime());
     } else {
       setStartPage(defaultStartPage != null ? String(defaultStartPage) : '');
@@ -80,7 +82,10 @@ export function SessionEditor({
   }, [visible, session, defaultStartPage, defaultMinutes, defaultDayTs]);
 
   const mins = parseInt(minutes, 10);
-  const minutesOk = Number.isFinite(mins) && mins > 0 && mins <= MAX_SESSION_MINUTES;
+  // 0 is only valid for a session that never had a time; new sessions and
+  // timed ones need a duration.
+  const untimed = !!session && session.durationSeconds === 0;
+  const minutesOk = Number.isFinite(mins) && (mins > 0 || (untimed && mins === 0)) && mins <= MAX_SESSION_MINUTES;
   const minutesTooLong = Number.isFinite(mins) && mins > MAX_SESSION_MINUTES;
   const sp = parsePageField(startPage);
   const ep = parsePageField(endPage);
@@ -150,6 +155,8 @@ export function SessionEditor({
           <Text style={[styles.error, { color: c.danger }]}>
             {tr('session.minutesMax', { n: MAX_SESSION_MINUTES })}
           </Text>
+        ) : untimed ? (
+          <Text style={[styles.hint, { color: c.textMuted }]}>{tr('session.untimedHint')}</Text>
         ) : null}
       </View>
 
@@ -201,5 +208,6 @@ const styles = StyleSheet.create({
   arrow: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 13, fontWeight: '600' },
   error: { fontSize: 12, fontWeight: '600', marginTop: -4 },
+  hint: { fontSize: 12, marginTop: -2 },
   input: { height: 48, borderRadius: radius.md, paddingHorizontal: spacing.md, fontSize: 16, fontWeight: '600' },
 });

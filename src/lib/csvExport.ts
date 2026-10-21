@@ -28,6 +28,10 @@ export const CSV_COLUMNS = [
   'Exclusive Shelf',
   'My Review',
   'Read Count',
+  // Tomo's own, past the Goodreads set: the series as data, so one without a
+  // position (which the Goodreads title convention can't carry) round-trips.
+  'Series',
+  'Series Number',
 ] as const;
 
 const EXCLUSIVE: Record<ReadingStatus, string> = {
@@ -50,11 +54,14 @@ function csvField(v: string): string {
 }
 
 /** Title as Goodreads spells series: "Dune (Dune, #1)" - parseSeries() on
- *  import splits it back. */
+ *  import splits it back. A series without a number stays out of the title:
+ *  "Title (Series)" is also how a plain parenthesised title reads, so
+ *  writing it risks the importer (ours or another app's) keeping it in the
+ *  title - which changes the title|author key and duplicates the book. The
+ *  Series columns carry it instead. */
 function csvTitle(b: Book): string {
-  if (!b.series) return b.title;
-  const n = b.seriesNumber != null ? `, #${b.seriesNumber}` : '';
-  return `${b.title} (${b.series}${n})`;
+  if (!b.series || b.seriesNumber == null) return b.title;
+  return `${b.title} (${b.series}, #${b.seriesNumber})`;
 }
 
 export function bookToCsvRow(b: Book, shelfNames: Map<string, string>): string[] {
@@ -86,6 +93,8 @@ export function bookToCsvRow(b: Book, shelfNames: Map<string, string>): string[]
     EXCLUSIVE[b.status],
     b.review ?? '',
     readCount > 0 ? String(readCount) : '',
+    b.series ?? '',
+    b.seriesNumber != null ? String(b.seriesNumber) : '',
   ];
 }
 

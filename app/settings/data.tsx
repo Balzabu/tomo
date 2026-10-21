@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '@/components/AppAlert';
 import * as DocumentPicker from 'expo-document-picker';
 import { AppData } from '@/types';
@@ -12,13 +13,14 @@ import { exportCsv, exportData } from '@/lib/backup';
 import { importFromUri } from '@/lib/importFlow';
 import { folderLabel, KEEP_CHOICES, pickBackupFolder, runBackup, useBackup } from '@/lib/autoBackup';
 import { useSnackbar } from '@/store/useSnackbar';
-import { formatTimeOfDay } from '@/lib/utils';
+import { devDetail, formatTimeOfDay } from '@/lib/utils';
 import { Ionicons } from '@expo/vector-icons';
 import { withLockGrace } from '@/store/useLock';
 
 export default function DataSettings() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
+  const insets = useSafeAreaInsets();
   const backup = useBackup((s) => s.config);
   const backupRunning = useBackup((s) => s.running);
   const [howTo, setHowTo] = useState(false);
@@ -51,7 +53,7 @@ export default function DataSettings() {
       const ok = await exportData(data, tr('settings.exportTitle'));
       if (!ok) Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
     } catch (e) {
-      Alert.alert(tr('common.error'), String(e));
+      Alert.alert(tr('common.error'), devDetail(tr('data.exportFailed'), e));
     } finally {
       setBusy(null);
     }
@@ -71,7 +73,7 @@ export default function DataSettings() {
       );
       if (!ok) Alert.alert(tr('settings.shareUnavailableTitle'), tr('settings.shareUnavailableMsg'));
     } catch (e) {
-      Alert.alert(tr('common.error'), String(e));
+      Alert.alert(tr('common.error'), devDetail(tr('data.exportFailed'), e));
     } finally {
       setBusy(null);
     }
@@ -132,7 +134,7 @@ export default function DataSettings() {
     : { text: tr('autoBackup.desc'), tone: 'muted' as const };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.xl }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom, gap: spacing.xl }}>
       <View style={styles.section}>
         <SettingsGroup title={tr('autoBackup.title')}>
           <SettingsSwitchRow first icon="sync" label={tr('autoBackup.enable')} value={backup.enabled} onChange={(v) => void toggleAuto(v)} />

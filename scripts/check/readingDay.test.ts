@@ -14,6 +14,7 @@ import {
 import { goalProgress } from '../../src/lib/goals.ts';
 import { planProgress, readingCurve } from '../../src/lib/plan.ts';
 import { reminderDays } from '../../src/lib/reminderPlan.ts';
+import { countFinishesInYear, finishYear } from '../../src/lib/reads.ts';
 
 const at = (y: number, mo: number, d: number, h: number, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
 const S = (start: number, mins: number, pages = 10): any => ({
@@ -130,6 +131,19 @@ setDayStartHour(4);
   assert.equal(readingDayKey(at(2026, 3, 29, 3, 30)), '2026-03-28');
   assert.equal(new Date(nextDayRollover(at(2026, 10, 24, 22))).getHours(), 4);
   assert.equal(new Date(nextDayRollover(at(2026, 3, 28, 22))).getHours(), 4);
+}
+
+// --- a finish at 02:00 on Jan 1 belongs to the old year -------------------
+setDayStartHour(4);
+{
+  const b: any = { id: 'f', title: 'f', authors: [], status: 'finished', currentPage: 10, pageCount: 10, addedAt: 1, shelfIds: [], source: 'manual', finishedAt: at(2026, 1, 1, 2, 0) };
+  assert.equal(finishYear(b.finishedAt), 2025);
+  assert.equal(countFinishesInYear([b], 2025), 1, 'the stats tile, wrapped and goals agree: New Year’s Eve reading');
+  assert.equal(countFinishesInYear([b], 2026), 0);
+  const goal: any = { id: 'g', metric: 'books', period: 'year', target: 1 };
+  assert.equal(goalProgress(goal, [b], [], '2025-12-31').current, 1);
+  setDayStartHour(0);
+  assert.equal(countFinishesInYear([b], 2026), 1, 'at midnight it is January');
 }
 
 // --- the widgets' copy never overrides the settings store ----------------

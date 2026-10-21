@@ -123,7 +123,7 @@ export function ShelfEditor({ visible, shelf, onClose }: Props) {
             <View style={{ gap: spacing.sm }}>
               <Text style={[styles.label, { color: c.textMuted }]}>{tr('settings.shelfColor')}</Text>
               <View style={styles.grid}>
-                {SHELF_COLORS.map((sw) => {
+                {SHELF_COLORS.map((sw, idx) => {
                   const sel = sw === color;
                   return (
                     <Pressable
@@ -132,6 +132,9 @@ export function ShelfEditor({ visible, shelf, onClose }: Props) {
                         void Haptics.selectionAsync();
                         setColor(sw);
                       }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: sel }}
+                      accessibilityLabel={tr('settings.shelfColorN', { n: idx + 1 })}
                       style={[
                         styles.swatch,
                         { backgroundColor: sw, borderColor: sel ? c.text : 'transparent' },
@@ -183,6 +186,9 @@ export function ShelfEditor({ visible, shelf, onClose }: Props) {
                             void Haptics.selectionAsync();
                             setIcon(g);
                           }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: sel }}
+                          accessibilityLabel={g}
                           style={[
                             styles.cell,
                             {
@@ -208,6 +214,8 @@ export function ShelfEditor({ visible, shelf, onClose }: Props) {
                             void Haptics.selectionAsync();
                             setEmoji(g);
                           }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: sel }}
                           style={[
                             styles.cell,
                             {

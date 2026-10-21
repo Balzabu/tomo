@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -34,6 +35,7 @@ type Row = { kind: 'header'; book: Book; count: number } | { kind: 'note'; note:
 export default function NotesScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ type?: string }>();
   const books = useStore((s) => s.books);
   const notes = useStore((s) => s.notes);
@@ -172,7 +174,7 @@ export default function NotesScreen() {
       <FlatList
         data={rows}
         keyExtractor={(r) => (r.kind === 'header' ? `h-${r.book.id}` : r.note.id)}
-        contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, gap: spacing.sm, paddingBottom: 120 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, gap: spacing.sm, paddingBottom: 120 + insets.bottom }}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           notes.length === 0 ? (
@@ -211,7 +213,7 @@ export default function NotesScreen() {
       {books.length > 0 ? (
         <Pressable
           onPress={() => setPickBook(true)}
-          style={[styles.fab, { backgroundColor: t.colors.primary }]}
+          style={[styles.fab, { backgroundColor: t.colors.primary, bottom: spacing.xl + insets.bottom }]}
           accessibilityRole="button"
           accessibilityLabel={tr('notes.add')}
         >

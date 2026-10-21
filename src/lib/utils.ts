@@ -90,6 +90,19 @@ export function formatDuration(seconds: number, units: DurationUnits = DEFAULT_U
   return `${sec}${num}${units.s}`;
 }
 
+/** A rating as stars for plain text: 4.5 → "★★★★½" (rounding up would
+ *  claim a star the reader didn't give). */
+export function ratingStars(rating: number): string {
+  const full = Math.floor(rating);
+  return '★'.repeat(full) + (rating - full >= 0.5 ? '½' : '');
+}
+
+/** An error dialog's body: the translated sentence, plus the raw error on
+ *  a dev build, where it's what you want to see. */
+export function devDetail(message: string, e: unknown): string {
+  return __DEV__ ? `${message}\n\n${String(e)}` : message;
+}
+
 /** Clock format HH:MM:SS or MM:SS for the live timer. */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

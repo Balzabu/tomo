@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '@/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { Shelf } from '@/types';
@@ -12,6 +13,7 @@ import { ShelfEditor } from '@/components/ShelfEditor';
 export default function ShelvesSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   // Actions are stable; subscribe only to the reactive shelves list.
   const store = useStore.getState();
   const shelves = useStore((s) => s.shelves);
@@ -33,7 +35,7 @@ export default function ShelvesSettings() {
     ]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom, gap: spacing.lg }}>
       <Button label={tr('settings.newShelf')} icon="add" full onPress={openNew} />
 
       {shelves.length === 0 ? (
@@ -55,7 +57,7 @@ export default function ShelvesSettings() {
               </View>
               <Text style={[styles.shelfName, { color: t.colors.text }]}>{sh.name}</Text>
               <Ionicons name="create-outline" size={18} color={t.colors.textFaint} />
-              <Pressable onPress={() => confirmDelete(sh)} hitSlop={8}>
+              <Pressable onPress={() => confirmDelete(sh)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
                 <Ionicons name="trash-outline" size={18} color={t.colors.textFaint} />
               </Pressable>
             </Pressable>

@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '@/components/AppAlert';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { durationUnits, formatDecimal, formatInt, monthsLong, numUnitSep, useTranslation } from '@/i18n';
 import { availableWrappedYears, computeYearWrapped, latestWrappedYear } from '@/lib/stats';
 import { formatDuration } from '@/lib/utils';
-import { finishesOf } from '@/lib/reads';
+import { finishYear, finishesOf } from '@/lib/reads';
 import { Button, EmptyState, Pill } from '@/components/ui';
 import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
 import { ShareStyleControls } from '@/components/ShareStyleControls';
@@ -19,6 +20,7 @@ const CARD_W = 320;
 export default function WrappedScreen() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
+  const insets = useSafeAreaInsets();
   const books = useStore((s) => s.books);
   const sessions = useStore((s) => s.sessions);
   const cardRef = useRef<View>(null);
@@ -47,12 +49,12 @@ export default function WrappedScreen() {
       if (!b.coverUrl) continue;
       const last = finishesOf(b)
         .map((r) => r.finishedAt)
-        .filter((at) => new Date(at).getFullYear() === year)
+        .filter((at) => finishYear(at) === year)
         .sort((a, z) => z - a)[0];
       if (last) done.push({ at: last, uri: b.coverUrl });
     }
     return done.sort((a, z) => z.at - a.at).slice(0, 6).map((d) => d.uri);
-  }, [books, year]);
+  }, [books, year, dayStartHour]);
   const c = t.colors;
 
   if (year == null || !w) {
@@ -85,7 +87,7 @@ export default function WrappedScreen() {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, alignItems: 'center' }}>
+    <ScrollView style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, alignItems: 'center', paddingBottom: spacing.lg + insets.bottom }}>
       {years.length > 1 ? (
         <View style={{ width: '100%', maxWidth: 480, gap: spacing.sm }}>
           <Text style={{ color: c.textMuted, fontSize: 13, fontWeight: '600' }}>{tr('wrapped.pickYear')}</Text>

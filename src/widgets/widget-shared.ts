@@ -237,6 +237,37 @@ async function cachedRemoteCover(url: string): Promise<string> {
   return done ?? url;
 }
 
+/** Drop cached widget covers no longer among `keepUrls` (the library's cover
+ *  urls). Best-effort, called once per app launch: the cache is otherwise
+ *  never pruned, and a remote cover outlives its book for ever. */
+export async function pruneWidgetCovers(keepUrls: Iterable<string>): Promise<void> {
+  try {
+    if (!(await FileSystem.getInfoAsync(WIDGET_COVER_DIR)).exists) return;
+    const keep = new Set<string>();
+    for (const url of keepUrls) keep.add(`${hashUrl(url)}.img`);
+    const names = await FileSystem.readDirectoryAsync(WIDGET_COVER_DIR);
+    await Promise.all(
+      names.map((name) =>
+        // A `.part` file belongs to a download still in flight: leave it.
+        keep.has(name) || name.endsWith('.part')
+          ? Promise.resolve()
+          : FileSystem.deleteAsync(`${WIDGET_COVER_DIR}${name}`, { idempotent: true }).catch(() => {})
+      )
+    );
+  } catch {
+    // best-effort cleanup
+  }
+}
+
+/** Remove the whole widget cover cache (used when wiping all data). */
+export async function clearWidgetCovers(): Promise<void> {
+  try {
+    await FileSystem.deleteAsync(WIDGET_COVER_DIR, { idempotent: true });
+  } catch {
+    // ignore - best-effort cleanup
+  }
+}
+
 /** Convert a cover url into something ImageWidget accepts. Local covers are
  *  handed over as file:// URIs - the native renderer decodes those directly
  *  (ResourceUtils.getBitmap), so no multi-MB base64 string has to be read,

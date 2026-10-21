@@ -14,8 +14,29 @@ export function RatingStars({ value, size = 22, onChange }: Props) {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const stars = [1, 2, 3, 4, 5];
+  const stepTo = (next: number) => {
+    void Haptics.selectionAsync();
+    onChange?.(Math.min(5, Math.max(0, next)));
+  };
+  // One announcement for the whole row ("4 stars"), not five identical ones
+  // per star. The interactive row is an adjustable control too, so a screen
+  // reader can swipe up/down in half steps without hunting for the stars.
+  const a11y = onChange
+    ? {
+        accessible: true,
+        accessibilityRole: 'adjustable' as const,
+        accessibilityLabel: tr('rating.label'),
+        accessibilityValue: { text: tr('rating.stars', { n: value }) },
+        accessibilityHint: tr('rating.hint'),
+        accessibilityActions: [{ name: 'increment' }, { name: 'decrement' }],
+        onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
+          if (e.nativeEvent.actionName === 'increment') stepTo(value + 0.5);
+          else if (e.nativeEvent.actionName === 'decrement') stepTo(value - 0.5);
+        },
+      }
+    : { accessible: true, accessibilityLabel: tr('rating.stars', { n: value }) };
   return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
+    <View style={{ flexDirection: 'row', gap: 2 }} {...a11y}>
       {stars.map((i) => {
         const name =
           value >= i ? 'star' : value >= i - 0.5 ? 'star-half' : 'star-outline';
@@ -24,7 +45,7 @@ export function RatingStars({ value, size = 22, onChange }: Props) {
         );
         if (!onChange)
           return (
-            <View key={i} accessibilityLabel={tr('rating.stars', { n: value })}>
+            <View key={i} importantForAccessibility="no-hide-descendants">
               {star}
             </View>
           );
@@ -35,11 +56,9 @@ export function RatingStars({ value, size = 22, onChange }: Props) {
             accessibilityRole="button"
             accessibilityLabel={tr('rating.stars', { n: i })}
             onPress={() => {
-              void Haptics.selectionAsync();
               // Tapping a star cycles full → half → cleared, so a rating can
               // be removed again (there is no other way to reach 0).
-              const next = value === i ? i - 0.5 : value === i - 0.5 ? 0 : i;
-              onChange(next);
+              stepTo(value === i ? i - 0.5 : value === i - 0.5 ? 0 : i);
             }}
           >
             {star}

@@ -2,10 +2,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   dynamicTheme,
+  effectiveChoice,
   radius,
   SCHEME_LIST,
   SCHEMES,
   SchemeChoice,
+  schemeLabel,
   spacing,
   useDynamicPalettes,
   useTheme,
@@ -24,18 +26,23 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
   const { t: tr } = useTranslation();
   const palettes = useDynamicPalettes((s) => s.palettes);
   const dyn = palettes ? { light: dynamicTheme(palettes, false).colors, dark: dynamicTheme(palettes, true).colors } : null;
+  // No Material You card is shown without palettes, so a 'dynamic' choice
+  // (restored from another phone) highlights Auto, which is what it renders as.
+  const picked = effectiveChoice(choice, palettes);
 
   return (
     <View style={styles.grid}>
       {/* Automatic (follows system light/dark) */}
       <Pressable
         onPress={() => onPick('system')}
+        accessibilityRole="button"
+        accessibilityState={{ selected: picked === 'system' }}
         style={[
           styles.card,
           styles.autoCard,
           {
-            borderColor: choice === 'system' ? t.colors.primary : t.colors.border,
-            borderWidth: choice === 'system' ? 2 : StyleSheet.hairlineWidth,
+            borderColor: picked === 'system' ? t.colors.primary : t.colors.border,
+            borderWidth: picked === 'system' ? 2 : StyleSheet.hairlineWidth,
           },
         ]}
       >
@@ -52,7 +59,7 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
           <Text style={[styles.name, { color: '#fff' }]} numberOfLines={1}>
             {autoLabel}
           </Text>
-          {choice === 'system' ? (
+          {picked === 'system' ? (
             <Ionicons name="checkmark-circle" size={18} color="#fff" />
           ) : null}
         </View>
@@ -66,12 +73,12 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
             styles.card,
             styles.autoCard,
             {
-              borderColor: choice === 'dynamic' ? t.colors.primary : t.colors.border,
-              borderWidth: choice === 'dynamic' ? 2 : StyleSheet.hairlineWidth,
+              borderColor: picked === 'dynamic' ? t.colors.primary : t.colors.border,
+              borderWidth: picked === 'dynamic' ? 2 : StyleSheet.hairlineWidth,
             },
           ]}
           accessibilityRole="button"
-          accessibilityState={{ selected: choice === 'dynamic' }}
+          accessibilityState={{ selected: picked === 'dynamic' }}
         >
           <View style={StyleSheet.absoluteFill}>
             <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -92,18 +99,21 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
             <Text style={[styles.name, { color: '#fff' }]} numberOfLines={1}>
               {tr('theme.dynamic')}
             </Text>
-            {choice === 'dynamic' ? <Ionicons name="checkmark-circle" size={18} color="#fff" /> : null}
+            {picked === 'dynamic' ? <Ionicons name="checkmark-circle" size={18} color="#fff" /> : null}
           </View>
         </Pressable>
       ) : null}
 
       {SCHEME_LIST.map((id) => {
         const c = SCHEMES[id].colors;
-        const selected = choice === id;
+        const selected = picked === id;
         return (
           <Pressable
             key={id}
             onPress={() => onPick(id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={schemeLabel(id, tr)}
             style={[
               styles.card,
               {
@@ -122,7 +132,7 @@ export function ThemeGallery({ choice, autoLabel, onPick }: Props) {
             <View style={[styles.line, { width: '52%', backgroundColor: c.textMuted }]} />
             <View style={styles.cardFooter}>
               <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
-                {tr(`theme.${id}`)}
+                {schemeLabel(id, tr)}
               </Text>
               {selected ? (
                 <Ionicons name="checkmark-circle" size={18} color={c.primary} />

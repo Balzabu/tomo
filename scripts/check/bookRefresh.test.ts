@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  diffBook, defaultSelection, patchFrom, fillEmptyPatch, needsCatalogData, pickValues, checkedIsbnAfterLookup,
+  diffBook, defaultSelection, patchFrom, fillEmptyPatch, needsCatalogData, pickValues, checkedIsbnAfterLookup, isCoverGuess,
 } from '../../src/lib/bookRefresh.ts';
 
 const book = { title: 'Il cerchio', authors: ['Dave  eggers'], pageCount: undefined, coverUrl: undefined, publisher: 'Feltrinelli' };
@@ -72,6 +72,22 @@ assert.equal(checkedIsbnAfterLookup({ authors: [] }, null), undefined); // no IS
 // the catalogue language is not refreshed: the app never shows or uses it
 assert.deepEqual(diffBook({}, { language: 'es' } as object), []);
 assert.deepEqual(fillEmptyPatch({ title: 'T' }, { title: 'T', ...({ language: 'it' } as object) }), {});
+
+// a cover URL guessed from the ISBN (Open Library, 404 when there is none) is
+// recognised so the add paths can check it and drop it; a cover a catalogue
+// listed is not
+const guess = 'https://covers.openlibrary.org/b/isbn/9788807896835-L.jpg?default=false';
+assert.equal(isCoverGuess(guess), true);
+assert.equal(isCoverGuess('https://covers.openlibrary.org/b/isbn/0306406152-M.jpg?default=false'), true);
+assert.equal(isCoverGuess('https://covers.openlibrary.org/b/id/12345-L.jpg'), false);
+assert.equal(isCoverGuess('https://covers.openlibrary.org/b/isbn/9788807896835-L.jpg'), false); // blank-200 variant, never stored
+assert.equal(isCoverGuess('https://books.google.com/books/content?id=x&printsec=frontcover&img=1'), false);
+assert.equal(isCoverGuess('file:///covers/a.jpg'), false);
+assert.equal(isCoverGuess(''), false);
+assert.equal(isCoverGuess(undefined), false);
+// a book keeping the guess looks complete; once dropped it is offered a lookup
+assert.equal(needsCatalogData({ isbn: I, coverUrl: guess, pageCount: 3, authors: ['a'] }), false);
+assert.equal(needsCatalogData({ isbn: I, coverUrl: undefined, pageCount: 3, authors: ['a'] }), true);
 
 // pickValues drops non-refresh fields
 assert.deepEqual(pickValues({ title: 'T', ...({ status: 'reading', isbn: '1' } as object) }), { title: 'T' });

@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSettings } from '@/store/useSettings';
@@ -12,6 +13,7 @@ import { toDateKey } from '@/lib/utils';
 export default function DayStartSettings() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
+  const insets = useSafeAreaInsets();
   const dayStartHour = useSettings((s) => s.dayStartHour);
   const setDayStartHour = useSettings((s) => s.setDayStartHour);
   // Re-rendered on focus, on resume and at the rollover, so the preview below
@@ -33,7 +35,7 @@ export default function DayStartSettings() {
   });
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.sm }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom, gap: spacing.sm }}>
       <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
         {DAY_START_HOURS.map((h, i) => {
           const active = dayStartHour === h;

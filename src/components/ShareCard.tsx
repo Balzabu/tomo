@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { onColor, Theme } from '@/theme/theme';
+import { useTranslation } from '@/i18n';
 import { CurvePoint } from '@/lib/plan';
 import { ReadingCurve } from '@/components/ReadingCurve';
 import {
@@ -145,6 +146,9 @@ function inkFor(style: ShareStyle, theme: Theme): Ink {
 /** A capture-ready shareable card. The forwarded ref is what view-shot snapshots. */
 export const ShareCard = forwardRef<View, Props>(function ShareCard({ theme, style, aspect, width, content }, ref) {
   const c = theme.colors;
+  // Upper-casing follows the app language, not the device locale: a Turkish
+  // phone would otherwise turn the "i" of an English kicker into "İ".
+  const { lang } = useTranslation();
   const height = aspect === 'story' ? Math.round((width * 16) / 9) : width;
   const ink = inkFor(style, theme);
   const pad = Math.round(width * 0.075);
@@ -186,7 +190,7 @@ export const ShareCard = forwardRef<View, Props>(function ShareCard({ theme, sty
 
       <View style={[styles.inner, { padding: pad }]}>
         <Text style={{ color: ink.muted, fontSize: Math.round(u * 3.4), fontWeight: '800', letterSpacing: u * 0.35, fontFamily: ink.paper ? SERIF : undefined }} numberOfLines={1}>
-          {kicker.toLocaleUpperCase()}
+          {kicker.toLocaleUpperCase(lang)}
         </Text>
         <View style={styles.body}>
           {content.kind === 'book' ? (

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { lookupByIsbn } from '@/services/bookApi';
+import { dropDeadCoverGuess } from '@/services/catalogRefresh';
 import { findExistingBook, useStore } from '@/store/useStore';
 import { useLock, withLockGrace } from '@/store/useLock';
 import { isbnKey, normalizeIsbn } from '@/lib/isbn';
@@ -20,7 +21,13 @@ export default function ScanScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const [permission, requestPermission] = useCameraPermissions();
-  const addBook = useStore((s) => s.addBook);
+  const addBookToStore = useStore((s) => s.addBook);
+  // The cover of an ISBN lookup may be a guess (Open Library by ISBN): it is
+  // saved as-is so it shows at once, and checked after the add, not before
+  // - the scanner must not wait on a second request.
+  const addBook = (result: BookSearchResult, status: 'want_to_read') => {
+    dropDeadCoverGuess(addBookToStore(result, status));
+  };
   // No camera behind the lock screen.
   const locked = useLock((s) => s.locked);
   const [phase, setPhase] = useState<Phase>('scanning');

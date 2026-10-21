@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { Alert } from '@/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +13,7 @@ import { isLikelyGoogleApiKey, setGoogleApiKey, validateGoogleApiKey } from '@/s
 export default function BookSearchSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [apiKey, setApiKey] = useState('');
   const [savedKey, setSavedKey] = useState('');
   const [checking, setChecking] = useState(false);
@@ -80,7 +82,7 @@ export default function BookSearchSettings() {
     : tr('common.save');
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom }}>
       <Card style={{ gap: spacing.md }}>
         <Text style={[styles.status, { color: savedKey ? c.success : c.textFaint }]}>
           {savedKey ? tr('settings.keyActive') : tr('settings.keyInactive')}

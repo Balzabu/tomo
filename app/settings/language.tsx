@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Language, LANGUAGES, useSettings } from '@/store/useSettings';
@@ -9,6 +10,7 @@ import { Flag } from '@/components/Flag';
 export default function LanguageSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const language = useSettings((s) => s.language);
   const setLanguage = useSettings((s) => s.setLanguage);
   const c = t.colors;
@@ -19,7 +21,7 @@ export default function LanguageSettings() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom }}>
       <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
         {LANGUAGES.map((l, i) => {
           const active = language === l;

@@ -118,6 +118,17 @@ export function fillEmptyPatch(current: RefreshValues, incoming: RefreshValues):
   return patchFrom(diffs, defaultSelection(diffs), current);
 }
 
+/**
+ * An Open Library cover-by-ISBN URL (bookApi's olCoverFromIsbn): a guess
+ * made when no catalogue had a cover, not a cover a catalogue listed. It
+ * 404s when there is none (default=false), and a book keeping it looks
+ * covered to needsCatalogData() while showing the placeholder - so the add
+ * paths check it after saving and drop it (catalogRefresh.dropDeadCoverGuess).
+ */
+export function isCoverGuess(url?: string): boolean {
+  return !!url && /^https?:\/\/covers\.openlibrary\.org\/b\/isbn\/[0-9Xx]+-[SML]\.jpg\?default=false$/.test(url);
+}
+
 function lookupKey(isbn: string): string {
   return normalizeIsbn(isbn) ?? compactIsbn(isbn);
 }

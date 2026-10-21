@@ -3,6 +3,7 @@ import { unzipSync } from 'fflate';
 import { AppData } from '@/types';
 import { parseBackup } from '@/lib/backup';
 import { base64ToCover } from '@/lib/covers';
+import { sniffDelimiter } from '@/lib/csv';
 import { parseBookCsv } from '@/lib/importSources';
 import { base64ToBytes, clampBundleTimes, ImportBundle, ShelfLabels, utf8Decode } from '@/lib/importBundle';
 import { isOpenreadsBackup, isOpenreadsCsv, parseOpenreadsBackup, parseOpenreadsCsv } from '@/lib/importOpenreads';
@@ -87,7 +88,9 @@ export async function readImportFile(uri: string, labels: ShelfLabels): Promise<
     return { kind: 'tomo', data: await parseBackup(text) };
   }
   const firstLine = head.slice(0, head.search(/\r?\n/) >>> 0);
-  const headers = firstLine.split(',').map((h) => h.replace(/^"|"$/g, '').trim());
+  // Same sniffing as the parser: an Openreads CSV re-saved by a European
+  // Excel is ";"-separated and would otherwise look like one unknown column.
+  const headers = firstLine.split(sniffDelimiter(firstLine)).map((h) => h.replace(/^"|"$/g, '').trim());
   if (isOpenreadsCsv(headers)) return { kind: 'bundle', bundle: parseOpenreadsCsv(text, labels) };
   const csv = parseBookCsv(text);
   if (csv) {

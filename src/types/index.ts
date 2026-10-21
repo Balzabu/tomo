@@ -107,6 +107,10 @@ export interface ReadingSession {
   pagesRead: number;
   note?: string;
   date: string; // YYYY-MM-DD (local)
+  /** How it was recorded: 'manual' ones get a nominal start time, so they say
+   *  nothing about the hour you read. Missing on timer sessions saved before
+   *  1.5.5 and on imports. */
+  source?: 'timer' | 'manual';
   updatedAt?: number;
 }
 
@@ -161,8 +165,10 @@ export interface Goal {
 export interface Tombstone {
   id: string;
   deletedAt: number;
-  /** books: ISBN/title keys, so the deletion also reaches the same book
-   *  under another id on another device */
+  /** natural keys (ISBN/title of a book, name of a shelf, book and times of
+   *  a session, …), so the deletion also reaches the same item under another
+   *  id on another device; absent in backups made before 1.5.5 for anything
+   *  but books */
   keys?: string[];
 }
 

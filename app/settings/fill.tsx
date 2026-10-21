@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '@/components/AppAlert';
 import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
@@ -12,6 +13,7 @@ import { booksNeedingData, fillMissingData, FillProgress } from '@/services/cata
 export default function FillSettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   // The lookups stop when the user leaves this screen, so they don't keep
   // hitting the network.
@@ -48,7 +50,7 @@ export default function FillSettings() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.sm }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom, gap: spacing.sm }}>
       <SettingsGroup>
         {progress ? (
           <View style={styles.progress}>

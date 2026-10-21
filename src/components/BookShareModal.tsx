@@ -10,6 +10,7 @@ import { ShareCard, ShareAspect, ShareStyle } from '@/components/ShareCard';
 import { ShareStyleControls } from '@/components/ShareStyleControls';
 import { shareViewAsImage } from '@/lib/shareImage';
 import { shareText } from '@/lib/share';
+import { ratingStars } from '@/lib/utils';
 
 interface Props {
   visible: boolean;
@@ -50,7 +51,7 @@ export function BookShareModal({ visible, book, onClose }: Props) {
   };
 
   const shareAsText = () => {
-    const stars = book.rating ? ` · ${'★'.repeat(Math.round(book.rating))}` : '';
+    const stars = book.rating ? ` · ${ratingStars(book.rating)}` : '';
     void shareText(`📖 ${book.title}\n${author}${stars}\n${tr(`status.${book.status}`)}\n\n${tr('share.fromTomo')}`);
   };
 

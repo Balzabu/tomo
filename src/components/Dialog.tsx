@@ -75,7 +75,7 @@ export function Dialog({ visible, onClose, title, subtitle, onShow, children, fo
                     </Text>
                   ) : null}
                 </View>
-                <Pressable onPress={onClose} hitSlop={8} accessibilityLabel={tr('common.close')}>
+                <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
                   <Ionicons name="close" size={22} color={c.textFaint} />
                 </Pressable>
               </View>

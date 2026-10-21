@@ -21,18 +21,21 @@ export function Snackbar() {
   // deleting two books) must each get their full timeout / undo window.
   // Behind the lock screen the clock stops: an Undo must not run out unseen,
   // so it gets its full window again once unlocked.
+  // A bar with an action (Undo) stays longer: four seconds is enough to read
+  // "Book deleted" but not to notice it, reach the bottom of the screen and
+  // decide, which is what the action is there for.
   useEffect(() => {
     if (!message || locked) return;
-    const id = setTimeout(dismiss, 4000);
+    const id = setTimeout(dismiss, actionLabel ? 7000 : 4000);
     return () => clearTimeout(id);
-  }, [message, key, dismiss, locked]);
+  }, [message, key, dismiss, locked, actionLabel]);
 
   if (!message) return null;
 
   return (
     <View style={[styles.wrap, { bottom: insets.bottom + 16 }]} pointerEvents="box-none">
-      <View style={[styles.bar, { backgroundColor: t.colors.text }]}>
-        <Text style={[styles.msg, { color: t.colors.bg }]} numberOfLines={2}>
+      <View style={[styles.bar, { backgroundColor: t.colors.text }]} accessibilityLiveRegion="polite">
+        <Text style={[styles.msg, { color: t.colors.bg }]} numberOfLines={2} accessibilityRole="alert">
           {message}
         </Text>
         {actionLabel ? (

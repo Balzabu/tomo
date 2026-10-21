@@ -90,3 +90,13 @@ console.log('statsExtra: all assertions passed');
   const r = readingRhythm([S('2026-09-28', 12, 600), S('2026-09-28', 21, 300)]);
   assert.equal(r.slots.afternoon, 0); assert.equal(r.slots.night, 300); assert.equal(r.weekdays[0], 900); assert.equal(r.timedSessions, 1);
 }
+{
+  // A flagged manual session is skipped for the hour whatever its start
+  // (placeOnReadingDay moves the nominal noon earlier late in the day).
+  const r = readingRhythm([{ ...S('2026-09-28', 9, 600), source: 'manual' }, S('2026-09-28', 21, 300)]);
+  assert.equal(r.slots.morning, 0); assert.equal(r.slots.night, 300); assert.equal(r.weekdays[0], 900); assert.equal(r.timedSessions, 1);
+  // The noon heuristic stays for unflagged (old, imported) sessions only.
+  assert.equal(readingRhythm([{ ...S('2026-09-28', 12, 600), source: 'timer' }]).timedSessions, 1);
+  assert.equal(readingRhythm([S('2026-09-28', 12, 600)]).timedSessions, 0);
+}
+console.log('statsExtra (manual flag): all assertions passed');

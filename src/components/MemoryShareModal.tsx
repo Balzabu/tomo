@@ -4,7 +4,7 @@ import { useStore } from '@/store/useStore';
 import { durationUnits, formatDateKey, formatInt, numUnitSep, useTranslation, wordSep } from '@/i18n';
 import { CardShareModal } from '@/components/CardShareModal';
 import { readingCurve, readStats } from '@/lib/plan';
-import { formatDuration } from '@/lib/utils';
+import { formatDuration, ratingStars } from '@/lib/utils';
 import { useDayStartHour } from '@/lib/useTodayKey';
 
 /**
@@ -57,7 +57,7 @@ export function MemoryShareModal({ visible, book, onClose }: { visible: boolean;
         `📖 ${book.title} — ${author}`,
         range ? `${tr('memory.readOn')}${/[:：]$/.test(tr('memory.readOn')) && wordSep(lang) === '' ? '' : ' '}${range}` : '',
         tiles.map((x) => `${x.value}${numUnitSep(lang)}${x.label}`).join(' · '),
-        book.rating ? '★'.repeat(Math.round(book.rating)) : '',
+        book.rating ? ratingStars(book.rating) : '',
         quote ? `“${quote}”` : '',
       ]
         .filter(Boolean)

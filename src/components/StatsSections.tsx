@@ -217,7 +217,9 @@ export function TbrCard({ books, sessions, today }: { books: Book[]; sessions: R
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
   const [share, setShare] = useState(false);
-  const f = useMemo(() => tbrForecast(books, today, sessions), [books, today, sessions]);
+  // Finish days move with the day start hour: the memo keys on it too.
+  const dayStartHour = useDayStartHour();
+  const f = useMemo(() => tbrForecast(books, today, sessions), [books, today, sessions, dayStartHour]);
   if (f.count === 0 && f.perMonth === 0) return null;
   const monthYear = (key: string) => formatMonthYear(key, lang);
   const sep = numUnitSep(lang);

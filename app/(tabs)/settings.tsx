@@ -8,7 +8,7 @@ import { useStore } from '@/store/useStore';
 import { useSettings } from '@/store/useSettings';
 import { useActiveSession } from '@/store/useActiveSession';
 import { useLock } from '@/store/useLock';
-import { spacing, useTheme } from '@/theme/theme';
+import { effectiveChoice, schemeLabel, spacing, useDynamicPalettes, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { APP_NAME, LINKS } from '@/lib/constants';
 import { SettingsGroup, SettingsRow } from '@/components/SettingsRow';
@@ -16,6 +16,7 @@ import { Flag } from '@/components/Flag';
 import { clearData } from '@/lib/storage';
 import { clearCovers } from '@/lib/covers';
 import { clearReadingSelections } from '@/widgets/widget-prefs';
+import { clearWidgetCovers } from '@/widgets/widget-shared';
 import { dayStartLabel } from '@/lib/readingDay';
 import { booksNeedingData } from '@/services/catalogRefresh';
 
@@ -27,6 +28,7 @@ export default function SettingsScreen() {
   const fillCandidates = useMemo(() => booksNeedingData(books).length, [books]);
   const replaceAll = useStore((s) => s.replaceAll);
   const scheme = useSettings((s) => s.scheme);
+  const palettes = useDynamicPalettes((s) => s.palettes);
   const language = useSettings((s) => s.language);
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
@@ -56,6 +58,10 @@ export default function SettingsScreen() {
           }
           await clearData();
           await clearCovers();
+          // The widgets' copy of the remote covers lives in the cache dir,
+          // outside the covers folder: wipe it too, or the wiped books'
+          // covers stay on the phone.
+          await clearWidgetCovers();
           // Drop any in-progress reading session too (and its ongoing
           // notification) so the next launch doesn't offer to "recover" a
           // session for a book that no longer exists.
@@ -68,7 +74,10 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const themeValue = scheme === 'system' ? tr('theme.auto') : scheme === 'dynamic' ? tr('theme.dynamic') : tr(`theme.${scheme}`);
+  // 'dynamic' without palettes on this phone renders as Auto, and says so.
+  const themeChoice = effectiveChoice(scheme, palettes);
+  const themeValue =
+    themeChoice === 'system' ? tr('theme.auto') : themeChoice === 'dynamic' ? tr('theme.dynamic') : schemeLabel(themeChoice, tr);
   const reminderValue = reminderEnabled
     ? `${String(reminderHour).padStart(2, '0')}:${String(reminderMinute).padStart(2, '0')}`
     : undefined;

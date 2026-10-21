@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { Alert } from '@/components/AppAlert';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -47,6 +48,7 @@ function publishedYear(date?: string): string | null {
 export default function BookDetailScreen() {
   const t = useTheme();
   const { t: tr, lang } = useTranslation();
+  const insets = useSafeAreaInsets();
   const units = durationUnits(lang);
   const { id, memory } = useLocalSearchParams<{ id: string; memory?: string }>();
   const book = useBook(id);
@@ -166,6 +168,7 @@ export default function BookDetailScreen() {
         startPage: draft.startPage,
         endPage: draft.endPage,
         pagesRead,
+        source: 'manual',
       });
     }
   };
@@ -240,7 +243,7 @@ export default function BookDetailScreen() {
 
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 + insets.bottom, gap: spacing.lg }}>
       <Stack.Screen
         options={{
           headerRight: () => (
@@ -532,7 +535,8 @@ export default function BookDetailScreen() {
                     .filter(Boolean)
                     .join(' · ')}
                 </Text>
-                <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
+                {/* 16 dp icon: the hit slop brings it to the 44 dp touch target. */}
+                <Pressable onPress={() => confirmDeleteSession(s.id)} hitSlop={14} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
                   <Ionicons name="close" size={16} color={t.colors.textFaint} />
                 </Pressable>
               </Pressable>
@@ -577,6 +581,7 @@ export default function BookDetailScreen() {
               startPage: book.currentPage,
               endPage: p,
               pagesRead: p - book.currentPage,
+              source: 'manual',
             });
           } else {
             store.setProgress(book.id, p);

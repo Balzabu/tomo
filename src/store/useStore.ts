@@ -25,7 +25,7 @@ import { STORAGE_WARN_CHARS } from '@/lib/storageCore';
 import { uid } from '@/lib/utils';
 import { readingDayKey, sessionDay } from '@/lib/readingDay';
 import { isbnKey, keepIsbn, normalizeBookIsbns } from '@/lib/isbn';
-import { finishFields, sanitizeReads, withRereadStarted } from '@/lib/reads';
+import { applyProgress, finishFields, sanitizeReads, sessionEnd, withFinishMoved, withRereadStarted, withSessionRemoved } from '@/lib/reads';
 import { legacyTypeOf, normalizeGoals } from '@/lib/goals';
 import { mergeData, MergeSummary, stampChanges } from '@/lib/sync';
 import type { ImportBundle } from '@/lib/importBundle';
@@ -235,31 +235,11 @@ function applyBookPatch(b: Book, patch: Partial<Book>): Book {
   return next;
 }
 
-/** A book moved to `currentPage` (clamped to its length): starts it when it
- *  leaves want-to-read, finishes it on the last page, and moves a finished
- *  book back to reading when the page is corrected downwards. Always returns
- *  a new object (the change is stamped even when the page is the same). */
-function applyProgress(b: Book, currentPage: number): Book {
-  const max = b.pageCount && b.pageCount > 0 ? b.pageCount : Infinity;
-  const page = Math.max(0, Math.min(currentPage, max));
-  const patch: Partial<Book> = { currentPage: page };
-  if (b.status === 'want_to_read' && page > 0) {
-    patch.status = 'reading';
-    patch.startedAt = b.startedAt ?? Date.now();
-  }
-  if (b.pageCount && page >= b.pageCount) {
-    patch.status = 'finished';
-    // startReread clears finishedAt; ordinary status corrections keep it.
-    // Re-saving the last page of a book already read (imported without a
-    // date) is not a new read - see finishFields.
-    Object.assign(patch, finishFields(b, Date.now()));
-  } else if (b.status === 'finished' && b.pageCount && page < b.pageCount) {
-    // Moving a finished book back to an earlier page is a correction
-    // ("I hadn't actually finished"): it can't stay "finished at page
-    // 50 of 300". finishedAt/readCount are kept, like setStatus does.
-    patch.status = 'reading';
-  }
-  return { ...b, ...patch };
+/** The moment a session's progress happened, for applyProgress: a backdated
+ *  session finishes the book on its own day. */
+function progressAt(s: ReadingSession): number {
+  const end = sessionEnd(s);
+  return end > 0 ? Math.min(end, Date.now()) : Date.now();
 }
 
 export const useStore = create<StoreState>((rawSet, get) => {
@@ -700,7 +680,7 @@ export const useStore = create<StoreState>((rawSet, get) => {
       return {
         sessions,
         books: s.books.map((b) =>
-          b.id === input.bookId ? applyProgress(b, Math.max(b.currentPage, endPage)) : b
+          b.id === input.bookId ? applyProgress(b, Math.max(b.currentPage, endPage), progressAt(session)) : b
         ),
       };
     });
@@ -710,32 +690,45 @@ export const useStore = create<StoreState>((rawSet, get) => {
 
   updateSession: (id, patch) => {
     set((s) => {
-      let bookId: string | undefined;
-      const sessions = s.sessions.map((x) => {
-        if (x.id !== id) return x;
-        const next = { ...x, ...patch };
-        // Keep the stored day in sync with the (possibly edited) start time,
-        // matching addSession.
-        if (patch.startTime != null) next.date = sessionDay({ startTime: next.startTime, date: next.date });
-        if (bookId === undefined) bookId = next.bookId;
-        return next;
-      });
-      // keep book progress in sync if the end page changed (forward only),
-      // in the same update as the session
-      const endPage = patch.endPage;
-      if (bookId == null || endPage == null) return { sessions };
+      const old = s.sessions.find((x) => x.id === id);
+      if (!old) return s;
+      const next: ReadingSession = { ...old, ...patch };
+      // Keep the stored day in sync with the (possibly edited) start time,
+      // matching addSession.
+      if (patch.startTime != null) next.date = sessionDay({ startTime: next.startTime, date: next.date });
+      const sessions = s.sessions.map((x) => (x.id === id ? next : x));
+      // Keep book progress in sync in the same update as the session: back
+      // to what the sessions reach when this one had set the page, then
+      // forward (only) to the edited end page.
       return {
         sessions,
-        books: s.books.map((b) =>
-          b.id === bookId ? applyProgress(b, Math.max(b.currentPage, endPage)) : b
-        ),
+        books: s.books.map((b) => {
+          if (b.id !== old.bookId) return b;
+          const backed = withSessionRemoved(b, old, sessions.filter((x) => x.bookId === b.id));
+          if (next.endPage != null && next.endPage > backed.currentPage) {
+            return applyProgress(backed, next.endPage, progressAt(next));
+          }
+          // Still the finishing session, on another day: the finish follows.
+          return withFinishMoved(backed, old, next, progressAt(next));
+        }),
       };
     });
     persist(get);
   },
 
   deleteSession: (id) => {
-    set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id) }));
+    set((s) => {
+      const old = s.sessions.find((x) => x.id === id);
+      if (!old) return s;
+      const sessions = s.sessions.filter((x) => x.id !== id);
+      // The page (and a finish) this session had set goes with it.
+      return {
+        sessions,
+        books: s.books.map((b) =>
+          b.id === old.bookId ? withSessionRemoved(b, old, sessions.filter((x) => x.bookId === b.id)) : b
+        ),
+      };
+    });
     persist(get);
   },
 

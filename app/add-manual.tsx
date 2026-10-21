@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { Alert } from '@/components/AppAlert';
 import { router } from 'expo-router';
@@ -23,6 +24,7 @@ import { findExistingBook, useStore } from '@/store/useStore';
 export default function AddManualScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const addManualBook = useStore((s) => s.addManualBook);
 
   const [title, setTitle] = useState('');
@@ -107,7 +109,7 @@ export default function AddManualScreen() {
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.lg + insets.bottom }}>
         <View style={{ gap: 8 }}>
           <Text style={[styles.label, { color: t.colors.textMuted }]}>{tr('cover.label')}</Text>
           <CoverPicker coverUrl={coverUrl} title={title} onChange={setCoverUrl} />

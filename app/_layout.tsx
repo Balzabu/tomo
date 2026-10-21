@@ -28,6 +28,7 @@ import { setGoogleApiKey } from '@/services/bookApi';
 import { hasNotificationPermission } from '@/lib/notifications';
 import { syncReminders, watchReminders } from '@/lib/reminders';
 import { reconcileCovers } from '@/lib/covers';
+import { pruneWidgetCovers } from '@/widgets/widget-shared';
 import { refreshWidgets } from '@/widgets/refresh';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Snackbar } from '@/components/Snackbar';
@@ -123,6 +124,9 @@ export default function RootLayout() {
     // reconciling against it would delete every custom cover.
     if (didReadFail()) return;
     const books = useStore.getState().books;
+    // Same pass for the widgets' cache of remote covers, which nothing else
+    // ever empties - also when the last book has just gone. Never fatal.
+    void pruneWidgetCovers(books.flatMap((b) => (b.coverUrl ? [b.coverUrl] : []))).catch(() => {});
     if (books.length === 0) return;
     void reconcileCovers(books.map((b) => b.coverUrl));
   }, [hydrated]);

@@ -31,7 +31,7 @@ It is built with Expo (React Native and TypeScript). Book data comes from Google
 - An optional reading reminder that can skip the days you've already read.
 - App lock with a PIN and, optionally, fingerprint or face unlock. While locked, the app can be blanked in the recent-apps switcher, widgets and notifications can hide titles, quotes and progress, and links from widgets, notifications or other apps wait for the PIN. Wrong PINs are throttled, and changing the phone's clock doesn't get around it.
 - Home-screen widgets: currently reading (with today's reading-plan quota, switching between the books you're reading), quick-start a session, streak and goal, reading calendar, and a quote of the day. All resizable, laid out for their actual size, and following the system light/dark mode.
-- 16 light and dark colour themes, plus Material You (colours from your wallpaper) on Android 12 and later.
+- 17 light and dark colour themes (including a pure-black one for OLED screens), plus Material You (colours from your wallpaper) on Android 12 and later.
 - Twelve languages: Italian, English, Spanish, French, German, Portuguese (Portugal and Brazil), Dutch, Polish, Japanese, Korean and Traditional Chinese, following the system language by default.
 - All data stays local: no account, no ads, no analytics, no tracking.
 
@@ -47,7 +47,7 @@ The APK is signed with the developer's release key, so later versions install ov
 
 ## Why not Google Play or F-Droid?
 
-I tried the Google Play route. I paid the one-time registration fee and completed the identity verification. The blocker is that Google now requires new personal developer accounts to run a closed test with at least 12 testers for 14 days in a row before the app can be submitted for production. Tomo is free, has no paid features of any kind, and collects nothing, so paying random people (on sites like Fiverr) just to clear an artificial testing quota made no sense to me. The app is not on Google Play.
+Google Play is a bad place for an individual to release an app. The process is hostile to anyone who is not a company: a registration fee, identity verification, a mandatory 14-day closed test with at least 12 testers before you may even submit, and a review queue on top. And it does not respect the developer's privacy: an app published from a personal account shows the developer's full legal name on its store page, with no way to turn it off, unless you publish through some dubious LLC. I'm not doing that for a free app that collects nothing, so Tomo is not on Google Play.
 
 F-Droid only accepts apps whose code and dependencies are free software. Tomo's ISBN barcode scanner is built on expo-camera, which on Android pulls in Google's proprietary `com.google.mlkit:barcode-scanning` and `com.google.android.gms:play-services-code-scanner`. Those libraries are used nowhere else in the app, only for reading ISBNs. Shipping on F-Droid would mean either dropping the scanner or maintaining a separate build flavour without it, and I would rather not keep two versions in sync, so Tomo is not on F-Droid either. The scanner is only a shortcut: you can still add any book by searching it online or entering it by hand.
 
@@ -69,9 +69,9 @@ For both reasons, Tomo is distributed straight from GitHub [Releases](https://gi
 - fflate and expo-sqlite to read other apps' exports (zip archives, Excel files and Bookmory's SQLite database) on the device.
 - A small local Expo module (`modules/tomo-system`, Kotlin) for Material You colours, hiding the app in Recents, receiving shared files, and a monotonic clock for the app lock.
 - Expo config plugins in `plugins/` for what the managed config can't express: the share target, widget provider extras, and Android hardening (no cloud backup or device-to-device transfer, non-exported third-party activities, no replay of a stale launch intent).
-- patch-package patches in `patches/` (react-native-android-widget: the widget image provider only serves the launcher, widget links stay inside Tomo, system fonts in widgets, and a cold-start fix so widgets don't stay blank).
+- patch-package patches in `patches/`: react-native-android-widget (the widget image provider only serves the launcher, widget links stay inside Tomo, system fonts in widgets, and a cold-start fix so widgets don't stay blank), expo-notifications (one daily reminder replaces the previous one instead of stacking) and expo-sharing (Tomo is left out of its own share sheet).
 - expo-localization with a small custom dictionary (with plural variants) for the twelve languages.
-- Gradle build, Hermes engine, New Architecture enabled.
+- Gradle build, Hermes engine, New Architecture enabled, R8 code and resource shrinking in release builds.
 
 ## Development
 
@@ -150,7 +150,7 @@ All data is saved locally with AsyncStorage, split into per-collection chunks (s
 
 ## Contributing
 
-Issues and pull requests are welcome. If you change UI text, keep the six language blocks in `src/i18n/strings.ts` in sync (every key must exist in all six), and run `npx tsc --noEmit` and `npm run check` before opening a PR. User-facing changes go in [CHANGELOG.md](./CHANGELOG.md).
+Issues and pull requests are welcome. If you change UI text, keep the twelve language blocks in `src/i18n/strings.ts` in sync (every key, with the same placeholders, must exist in all twelve; `npm run check` verifies it), and run `npx tsc --noEmit` and `npm run check` before opening a PR. User-facing changes go in [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 

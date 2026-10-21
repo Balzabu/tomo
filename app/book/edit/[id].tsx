@@ -8,14 +8,16 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { persistNow, useBook, useStore } from '@/store/useStore';
 import { radius, spacing, useTheme } from '@/theme/theme';
-import { useTranslation } from '@/i18n';
+import { formatDateKey, useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
+import { DatePickerDialog } from '@/components/DatePickerDialog';
 import { CoverPicker } from '@/components/CoverPicker';
 import { BookExtraFields } from '@/components/BookExtraFields';
 import { IsbnField } from '@/components/IsbnField';
@@ -27,8 +29,8 @@ import { parseLocalDateKey } from '@/lib/utils';
 import { readingDayKey } from '@/lib/readingDay';
 import { ReadingPace, ReadRecord } from '@/types';
 
-/** Reading dates are edited as YYYY-MM-DD text: the app has no date-picker
- *  dependency, and day-stepping chevrons (SessionEditor) are unusable for a
+/** Reading dates are kept as local day keys (YYYY-MM-DD), picked on the
+ *  calendar dialog: day-stepping chevrons (SessionEditor) are unusable for a
  *  book read two years ago. '' means "no date". */
 interface DateDraft {
   startedOn: string;
@@ -52,17 +54,16 @@ function draftOfBook(startedAt?: number, finishedAt?: number): DateDraft {
   };
 }
 
-/** null = invalid text; undefined = empty (no date). */
+/** undefined = empty (no date). */
 function parseDraftDate(s: string): number | null | undefined {
-  if (s.trim() === '') return undefined;
+  if (s === '') return undefined;
   return parseLocalDateKey(s);
 }
 
 /** Validate one start/finish pair; returns an error key or null. */
-function draftError(d: DateDraft): 'editBook.dateInvalid' | 'editBook.dateOrder' | null {
+function draftError(d: DateDraft): 'editBook.dateOrder' | null {
   const s = parseDraftDate(d.startedOn);
   const f = parseDraftDate(d.finishedOn);
-  if (s === null || f === null) return 'editBook.dateInvalid';
   if (s != null && f != null && f < s) return 'editBook.dateOrder';
   return null;
 }
@@ -70,6 +71,7 @@ function draftError(d: DateDraft): 'editBook.dateInvalid' | 'editBook.dateOrder'
 export default function EditBookScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   // refresh=1: opened from the book page's "details missing" banner - start
   // straight on the catalogue lookup.
   const { id, refresh } = useLocalSearchParams<{ id: string; refresh?: string }>();
@@ -251,7 +253,7 @@ export default function EditBookScreen() {
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.lg + insets.bottom }}>
         <View style={{ gap: 8 }}>
           <Text style={[styles.label, { color: t.colors.textMuted }]}>{tr('cover.label')}</Text>
           <CoverPicker coverUrl={coverUrl} title={title} onChange={setCoverUrl} />
@@ -298,14 +300,14 @@ export default function EditBookScreen() {
             label={tr('editBook.startedOn')}
             value={dates.startedOn}
             onChange={(v) => setDates((d) => ({ ...d, startedOn: v }))}
-            invalid={currentError === 'editBook.dateInvalid' && parseDraftDate(dates.startedOn) === null}
+            invalid={!!currentError}
           />
           {showFinished ? (
             <DateField
               label={tr('editBook.finishedOn')}
               value={dates.finishedOn}
               onChange={(v) => setDates((d) => ({ ...d, finishedOn: v }))}
-              invalid={currentError === 'editBook.dateInvalid' && parseDraftDate(dates.finishedOn) === null}
+              invalid={!!currentError}
             />
           ) : null}
           {currentError ? (
@@ -336,7 +338,7 @@ export default function EditBookScreen() {
                     onChange={(v) =>
                       setPastReads((list) => list.map((x, j) => (j === i ? { ...x, startedOn: v } : x)))
                     }
-                    invalid={parseDraftDate(d.startedOn) === null}
+                    invalid={!!pastErrors[i]}
                   />
                   <DateField
                     label={tr('editBook.finishedOn')}
@@ -344,7 +346,7 @@ export default function EditBookScreen() {
                     onChange={(v) =>
                       setPastReads((list) => list.map((x, j) => (j === i ? { ...x, finishedOn: v } : x)))
                     }
-                    invalid={parseDraftDate(d.finishedOn) === null}
+                    invalid={!!pastErrors[i]}
                   />
                   {pastErrors[i] ? (
                     <Text style={[styles.error, { color: t.colors.danger }]}>{tr(pastErrors[i]!)}</Text>
@@ -388,31 +390,32 @@ function DateField({
   invalid: boolean;
 }) {
   const t = useTheme();
-  const { t: tr } = useTranslation();
+  const { t: tr, lang } = useTranslation();
+  const [picking, setPicking] = useState(false);
   return (
     <View style={{ gap: 6 }}>
       <Text style={[styles.label, { color: t.colors.textMuted }]}>{label}</Text>
       <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          placeholder={tr('editBook.datePlaceholder')}
-          placeholderTextColor={t.colors.textFaint}
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
-          maxLength={10}
+        <Pressable
+          onPress={() => setPicking(true)}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityValue={{ text: value ? formatDateKey(value, lang) : tr('editBook.noDate') }}
           style={[
             styles.input,
             {
               flex: 1,
+              justifyContent: 'center',
               backgroundColor: t.colors.card,
               borderColor: invalid ? t.colors.danger : t.colors.border,
               borderWidth: invalid ? 1 : StyleSheet.hairlineWidth,
-              color: t.colors.text,
             },
           ]}
-        />
+        >
+          <Text style={{ fontSize: 15, color: value ? t.colors.text : t.colors.textFaint }}>
+            {value ? formatDateKey(value, lang) : tr('editBook.noDate')}
+          </Text>
+        </Pressable>
         <Pressable
           onPress={() => onChange(readingDayKey())}
           hitSlop={8}
@@ -434,6 +437,24 @@ function DateField({
           </Pressable>
         ) : null}
       </View>
+      <DatePickerDialog
+        visible={picking}
+        title={label}
+        value={value || undefined}
+        onClose={() => setPicking(false)}
+        onPick={(k) => {
+          onChange(k);
+          setPicking(false);
+        }}
+        onClear={
+          value
+            ? () => {
+                onChange('');
+                setPicking(false);
+              }
+            : undefined
+        }
+      />
     </View>
   );
 }

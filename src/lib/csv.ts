@@ -3,6 +3,10 @@
  * escaped quotes ("") and newlines inside quotes - enough for Goodreads /
  * StoryGraph exports. A quote in the middle of an unquoted field (5'10" tall)
  * is taken literally: opening quoted mode there swallowed the rest of the file.
+ * The delimiter is sniffed from the header line: a Goodreads or StoryGraph
+ * file re-saved by Excel in a locale whose list separator is ";" (Italian,
+ * German, French…) arrives semicolon-separated, and tab-separated exports
+ * exist too.
  */
 export function parseCsv(text: string): Record<string, string>[] {
   const rows = parseRows(text);
@@ -21,8 +25,29 @@ export function parseCsv(text: string): Record<string, string>[] {
   return out;
 }
 
+const DELIMITERS = [',', ';', '\t'] as const;
+
+/**
+ * The field separator used by a CSV's header line: whichever of ",", ";"
+ * and tab occurs most often outside quotes (comma on a tie, and when none
+ * occurs: a one-column file). Only the header is looked at - a title can
+ * contain any of them, a header name can't.
+ */
+export function sniffDelimiter(headerLine: string): ',' | ';' | '\t' {
+  const counts: Record<string, number> = { ',': 0, ';': 0, '\t': 0 };
+  let inQuotes = false;
+  for (const c of headerLine) {
+    if (c === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && c in counts) counts[c]++;
+  }
+  let best: ',' | ';' | '\t' = ',';
+  for (const d of DELIMITERS) if (counts[d] > counts[best]) best = d;
+  return best;
+}
+
 function parseRows(text: string): string[][] {
   const s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const delimiter = sniffDelimiter(s.slice(0, s.indexOf('\n') >>> 0));
   const rows: string[][] = [];
   let field = '';
   let row: string[] = [];
@@ -41,9 +66,12 @@ function parseRows(text: string): string[][] {
       } else {
         field += c;
       }
-    } else if (c === '"' && field === '') {
+    } else if (c === '"' && field.trim() === '') {
+      // A quote after only whitespace (`a, "b, c"` as some spreadsheets
+      // write it) still opens the field; the padding isn't part of it.
+      field = '';
       inQuotes = true;
-    } else if (c === ',') {
+    } else if (c === delimiter) {
       row.push(field);
       field = '';
     } else if (c === '\n') {

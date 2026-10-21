@@ -39,6 +39,8 @@ export const BookRow = memo(function BookRow({
       onPress={() => (onPress ? onPress(book.id) : router.push(`/book/${book.id}`))}
       onLongPress={onLongPress ? () => onLongPress(book.id) : undefined}
       delayLongPress={300}
+      accessibilityRole="button"
+      accessibilityState={selectionMode ? { selected: !!selected } : undefined}
       style={({ pressed }) => [
         styles.row,
         {

@@ -37,6 +37,8 @@ export function ShareStyleControls({ styles, style, aspect, primary, accent, onS
             <Pressable
               key={st}
               onPress={() => onStyle(st)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: sel }}
               accessibilityLabel={tr(`share.style.${st}`)}
               style={[
                 s.swatch,
@@ -62,6 +64,8 @@ export function ShareStyleControls({ styles, style, aspect, primary, accent, onS
             <Pressable
               key={a}
               onPress={() => onAspect(a)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: sel }}
               style={[s.segBtn, sel && { backgroundColor: c.card }]}
             >
               <Ionicons

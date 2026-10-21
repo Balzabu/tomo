@@ -245,3 +245,90 @@ console.log('sync (fast paths): all assertions passed');
   assert.deepEqual(r5.data.shelves.map((s: any) => s.id), ['l', 'b', 'c']);
 }
 console.log('sync (key tombstones, natural keys): all assertions passed');
+
+// ---- deletions reach sessions, notes, shelves and goals under another id (1.5.5) ----
+// Before 1.5.5 only book tombstones carried keys: a session stored here under
+// s1 (matched by key from device B's s2) came back as "1 session added" on the
+// next merge of B's backup after being deleted here.
+{
+  const now = 2_000_000;
+  const S = (id: string, bookId: string, extra: any = {}): any => ({ id, bookId, startTime: 100, endTime: 200, durationSeconds: 100, pagesRead: 5, date: '2026-01-01', updatedAt: 10, ...extra });
+  const N = (id: string, bookId: string, extra: any = {}): any => ({ id, bookId, type: 'note', text: ' hello ', createdAt: 1, updatedAt: 10, ...extra });
+  const SH = (id: string, name: string, extra: any = {}): any => ({ id, name, color: '#f00', createdAt: 1, updatedAt: 10, ...extra });
+  const G = (id: string, extra: any = {}): any => ({ id, metric: 'pages', period: 'day', target: 20, createdAt: 1, updatedAt: 10, ...extra });
+  const counts = (d: any) => [d.sessions.length, d.notes.length, d.shelves.length, d.goals.length];
+  // the same book, session, note, shelf and goal on two devices, under different ids
+  const backupB: any = { ...empty, books: [B('bB', { title: 'Dune', updatedAt: 10 })], sessions: [S('s2', 'bB')], notes: [N('n2', 'bB')], shelves: [SH('sh2', 'Fav')], goals: [G('g2')] };
+  const A0: any = { ...empty, books: [B('bA', { title: 'Dune', updatedAt: 10 })], sessions: [S('s1', 'bA')], notes: [N('n1', 'bA', { text: 'hello' })], shelves: [SH('sh1', 'fav ')], goals: [G('g1')] };
+  // sanity: they match by key, so merging B into A is a no-op
+  const r0 = mergeData(A0, backupB, now);
+  assert.deepEqual(counts(r0.data), [1, 1, 1, 1]);
+  assert.deepEqual(r0.data.sessions.map((s: any) => s.id), ['s1']);
+  assert.equal(r0.summary.sessionsAdded + r0.summary.notesAdded + r0.summary.shelvesAdded + r0.summary.goalsAdded, 0);
+  // A deletes everything: every tombstone carries the item's natural key
+  const del: any = stampChanges(A0, { sessions: [], notes: [], shelves: [], goals: [] }, now + 100);
+  const tombOf = (id: string) => del.deleted.find((t: any) => t.id === id);
+  assert.deepEqual(tombOf('s1').keys, ['s:bA|100|200|100|5|']);
+  assert.deepEqual(tombOf('sh1').keys, ['n:fav']);
+  assert.deepEqual(tombOf('g1').keys, ['r:pages|day']);
+  assert.match(tombOf('n1').keys[0], /^nt:bA\|note\|5:[0-9a-z]+$/);
+  assert.ok(!tombOf('n1').keys[0].includes('hello'), 'a deleted note\'s text stays out of its tombstone');
+  const A1: any = { ...A0, ...del };
+  // …then merges B's backup again (B still has its copies): nothing comes back
+  const r1 = mergeData(A1, backupB, now + 200);
+  assert.deepEqual(counts(r1.data), [0, 0, 0, 0]);
+  assert.equal(r1.summary.sessionsAdded, 0); assert.equal(r1.summary.notesAdded, 0);
+  assert.equal(r1.summary.shelvesAdded, 0); assert.equal(r1.summary.goalsAdded, 0);
+  assert.equal(r1.summary.removed, 4);
+  assert.equal(r1.data.books.length, 1, 'the book itself stays');
+  // the reverse direction: B deleted its copies, its backup carries the
+  // tombstones (naming B's book id) and A's copies go
+  const delB: any = stampChanges(backupB, { sessions: [], notes: [], shelves: [], goals: [] }, now + 100);
+  const r2 = mergeData(A0, { ...backupB, ...delB }, now + 200);
+  assert.deepEqual(counts(r2.data), [0, 0, 0, 0]);
+  assert.equal(r2.summary.removed, 4);
+  // …and the tombstones A keeps name A's book id, so A's own backup works on B again
+  assert.ok(r2.data.deleted.some((t: any) => t.keys?.[0] === 's:bA|100|200|100|5|'), 'session tombstone key remapped to the local book');
+  assert.ok(r2.data.deleted.some((t: any) => t.keys?.[0]?.startsWith('nt:bA|note|')), 'note tombstone key remapped to the local book');
+  // control: genuinely new items with other keys are still added
+  const fresh: any = { ...backupB, sessions: [S('s9', 'bB', { pagesRead: 7 })], notes: [N('n9', 'bB', { text: 'other' })], shelves: [SH('sh9', 'Other')], goals: [G('g9', { period: 'month' })] };
+  const r3 = mergeData(A1, fresh, now + 200);
+  assert.deepEqual(counts(r3.data), [1, 1, 1, 1]);
+  assert.equal(r3.summary.sessionsAdded, 1); assert.equal(r3.summary.notesAdded, 1);
+  assert.equal(r3.summary.shelvesAdded, 1); assert.equal(r3.summary.goalsAdded, 1);
+  // control: a copy re-created on B after A's deletion (newer updatedAt) survives…
+  const later = { updatedAt: now + 500 };
+  const r4 = mergeData(A1, { ...backupB, sessions: [S('s2', 'bB', later)], notes: [N('n2', 'bB', later)], shelves: [SH('sh2', 'Fav', later)], goals: [G('g2', later)] }, now + 600);
+  assert.deepEqual(counts(r4.data), [1, 1, 1, 1]);
+  assert.equal(r4.summary.sessionsAdded, 1);
+  // …and so does A's copy edited after B's deletion
+  const r5 = mergeData({ ...A0, sessions: [S('s1', 'bA', later)], notes: [N('n1', 'bA', later)], shelves: [SH('sh1', 'fav', later)], goals: [G('g1', later)] }, { ...backupB, ...delB }, now + 600);
+  assert.deepEqual(counts(r5.data), [1, 1, 1, 1]);
+  assert.equal(r5.summary.removed, 0);
+  // backups from before 1.5.5: id-only tombstones still parse and still work by id
+  const r6 = mergeData({ ...A0, sessions: [], deleted: [{ id: 's2', deletedAt: now + 100 }] }, backupB, now + 200);
+  assert.equal(r6.data.sessions.length, 0); assert.equal(r6.summary.sessionsAdded, 0);
+  const r7 = mergeData(A0, { ...backupB, sessions: [], deleted: [{ id: 's1', deletedAt: now + 100 }] }, now + 200);
+  assert.equal(r7.data.sessions.length, 0);
+  assert.deepEqual(r7.data.deleted, [{ id: 's1', deletedAt: now + 100 }], 'no keys invented for an old tombstone');
+  // deleting one of two identical sessions: the tombstone carries no key, the
+  // other copy (and B's) survive the merge as one
+  const twin = S('s1b', 'bA');
+  const delTwin: any = stampChanges({ ...A0, sessions: [A0.sessions[0], twin] }, { sessions: [twin] }, now + 100);
+  assert.deepEqual(delTwin.deleted, [{ id: 's1', deletedAt: now + 100 }]);
+  const r8 = mergeData({ ...A0, sessions: [twin], deleted: delTwin.deleted }, backupB, now + 200);
+  assert.deepEqual(r8.data.sessions.map((s: any) => s.id), ['s1b']);
+  // re-creating an identical session clears its key tombstone (like a book), the others stay
+  const back: any = stampChanges(A1, { sessions: [S('s3', 'bA')] }, now + 300);
+  assert.deepEqual(back.deleted.map((t: any) => t.id).sort(), ['g1', 'n1', 'sh1']);
+  // a shelf tombstone doesn't reach a shelf of another name, a goal's not another period
+  const r9 = mergeData(A1, { ...backupB, shelves: [SH('sh2', 'Favs')], goals: [G('g2', { period: 'year', year: 2026 })] }, now + 200);
+  assert.equal(r9.data.shelves.length, 1); assert.equal(r9.data.goals.length, 1);
+  // custom goals match on name, dates and metric
+  const cg = (id: string, extra: any = {}) => G(id, { period: 'custom', name: 'Summer', start: '2026-06-01', end: '2026-08-31', ...extra });
+  const delC: any = stampChanges({ ...A0, goals: [cg('c1')] }, { goals: [] }, now + 100);
+  assert.deepEqual(delC.deleted[0].keys, ['c:summer|2026-06-01|2026-08-31|pages']);
+  const rc = mergeData({ ...A0, goals: [], deleted: delC.deleted }, { ...backupB, goals: [cg('c2'), cg('c3', { end: '2026-09-30' })] }, now + 200);
+  assert.deepEqual(rc.data.goals.map((g: any) => g.id), ['c3']);
+}
+console.log('sync (deletions by key for every collection): all assertions passed');

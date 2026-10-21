@@ -3,22 +3,74 @@ import { Alert } from '@/components/AppAlert';
 import { router, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import {
+  ActiveSession,
   useActiveSession,
   sessionElapsedAtLastTick,
 } from '@/store/useActiveSession';
 import { useStore, useBook } from '@/store/useStore';
 import { isLockedOrDue, useLock } from '@/store/useLock';
 import { hasPendingLink } from '@/lib/deferredLink';
-import { dismissSessionNotification, QUOTE_ACTION_ID } from '@/lib/notifications';
+import { dismissSessionNotification, FINISH_ACTION_ID, QUOTE_ACTION_ID } from '@/lib/notifications';
 import { postSessionNotification } from '@/lib/sessionNotification';
 import { SessionEditor, SessionDraft } from '@/components/SessionEditor';
-import { useTranslation } from '@/i18n';
+import { TFunc, useTranslation } from '@/i18n';
 import { MAX_SESSION_MINUTES } from '@/lib/utils';
 import { atReadingDay, placeOnReadingDay } from '@/lib/readingDay';
 
 /**
+ * Two estimates for a session the heartbeat lost track of (the process was
+ * killed): the safe one stops at the last heartbeat (written every 15 s in
+ * the foreground and when backgrounding); the generous one counts until now,
+ * for the common "phone face-down, screen off, OS killed the app" paper-book
+ * session that the heartbeat can't see - capped at the longest session.
+ */
+export function orphanEstimates(a: ActiveSession, now: number = Date.now()): { tickSeconds: number; untilNowSeconds: number } {
+  const tickSeconds = sessionElapsedAtLastTick(a);
+  if (a.orphanRunningSince == null) return { tickSeconds, untilNowSeconds: tickSeconds };
+  const extra = Math.max(0, now - Math.max(a.orphanRunningSince, a.lastTick)) / 1000;
+  return { tickSeconds, untilNowSeconds: Math.min(MAX_SESSION_MINUTES * 60, tickSeconds + extra) };
+}
+
+/** The estimates in whole minutes, as the prompts show them (never under a
+ *  minute; "until now" only when it adds something). */
+export function orphanMinutes(a: ActiveSession, now: number = Date.now()): { tick: number; untilNow: number } {
+  const { tickSeconds, untilNowSeconds } = orphanEstimates(a, now);
+  const tick = Math.max(1, Math.round(tickSeconds / 60));
+  return { tick, untilNow: Math.max(tick, Math.round(untilNowSeconds / 60)) };
+}
+
+/**
+ * Ask which estimate to keep for an orphaned session: discard it, count
+ * until now (offered only when it adds a minute), or the safe one. The timer
+ * uses the same prompt when a notification's "Finish" lands on an orphan.
+ */
+export function askOrphanRecovery(
+  tr: TFunc,
+  title: string,
+  a: ActiveSession,
+  on: { discard: () => void; pick: (minutes: number, seconds: number) => void }
+): void {
+  const { tickSeconds, untilNowSeconds } = orphanEstimates(a);
+  const { tick, untilNow } = orphanMinutes(a);
+  Alert.alert(
+    tr('timer.recoverTitle'),
+    `${tr('timer.recoverMsg', { title, n: tick })}\n\n${tr('timer.recoverHint', { n: tick })}`,
+    [
+      { text: tr('timer.recoverDiscard'), style: 'destructive', onPress: on.discard },
+      ...(untilNow > tick
+        ? [{ text: tr('timer.recoverSaveNow', { n: untilNow }), onPress: () => on.pick(untilNow, untilNowSeconds) }]
+        : []),
+      { text: tr('timer.recoverSaveTick', { n: tick }), onPress: () => on.pick(tick, Math.max(60, tickSeconds)) },
+    ],
+    { cancelable: false }
+  );
+}
+
+/**
  * App-wide guardian for the active reading session. It:
- *  - routes a notification tap (cold start or warm) to the finish screen, and
+ *  - routes a notification tap (cold start or warm): Finish to the finish
+ *    screen, Quote to the quote editor, the notification itself to the
+ *    running timer; and
  *  - on launch, offers to recover a session orphaned by a process kill, letting
  *    the user confirm/adjust the duration and pages before it's saved.
  * Renders nothing except the recovery editor when needed.
@@ -60,6 +112,7 @@ export function ActiveSessionWatcher() {
     (lastResponse?.notification?.request?.content?.data?.sessionBookId as string | undefined) ??
     null;
   const wantsQuote = lastResponse?.actionIdentifier === QUOTE_ACTION_ID;
+  const wantsFinish = lastResponse?.actionIdentifier === FINISH_ACTION_ID;
   useEffect(() => {
     // Every tap is its own event (the same notification is tapped again and
     // again: "Quote" twice, "Finish" after going back), handled once.
@@ -82,12 +135,20 @@ export function ActiveSessionWatcher() {
       if (!onTimer) router.push({ pathname: '/timer/[bookId]', params: { bookId: navBookId } });
       return;
     }
-    // Tell any already-mounted timer to jump to finish, and only push a new
-    // timer screen when one isn't already showing (avoids stacking a duplicate).
-    useActiveSession.getState().requestFinish();
-    if (!onTimer) {
-      router.push({ pathname: '/timer/[bookId]', params: { bookId: navBookId, finish: '1' } });
+    // Only push a new timer screen when one isn't already showing (avoids
+    // stacking a duplicate).
+    if (wantsFinish) {
+      // Tell any already-mounted timer to jump to finish.
+      useActiveSession.getState().requestFinish();
+      if (!onTimer) {
+        router.push({ pathname: '/timer/[bookId]', params: { bookId: navBookId, finish: '1' } });
+      }
+      return;
     }
+    // A tap on the notification itself: back to the running timer, where the
+    // quote and note buttons are - stopping the session is the Finish button's
+    // job, not a tap's.
+    if (!onTimer) router.push({ pathname: '/timer/[bookId]', params: { bookId: navBookId } });
   }); // eslint-disable-line react-hooks/exhaustive-deps -- deduped on responseSeq; re-checked every render
 
   // The lock's privacy setting changed mid-session: the notification already in
@@ -102,18 +163,9 @@ export function ActiveSessionWatcher() {
     void postSessionNotification(tr, a.bookId, book.title, a.startedAt);
   }, [privateMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Two estimates: the safe one stops at the last heartbeat (written every
-  // 15 s in the foreground and when backgrounding); the generous one counts
-  // until now, for the common "phone face-down, screen off, OS killed the
-  // app" paper-book session that the heartbeat can't see.
-  const estMinutes = active ? Math.max(1, Math.round(sessionElapsedAtLastTick(active) / 60)) : 0;
-  const untilNowMinutes = (() => {
-    if (!active?.orphanRunningSince) return estMinutes;
-    const extra = Math.max(0, Date.now() - Math.max(active.orphanRunningSince, active.lastTick)) / 1000;
-    return Math.min(MAX_SESSION_MINUTES, Math.max(estMinutes, Math.round((sessionElapsedAtLastTick(active) + extra) / 60)));
-  })();
+  const estMinutes = active ? orphanMinutes(active).tick : 0;
   // Under a minute, even counting until now, isn't worth a question.
-  const tooShort = active ? sessionElapsedAtLastTick(active) < 60 && untilNowMinutes <= 1 : false;
+  const tooShort = active ? sessionElapsedAtLastTick(active) < 60 && orphanMinutes(active).untilNow <= 1 : false;
   const [chosenMinutes, setChosenMinutes] = useState(0);
 
   // Prompt once to recover an orphaned session.
@@ -138,27 +190,18 @@ export function ActiveSessionWatcher() {
     if (!canPrompt || promptedRef.current) return;
     promptedRef.current = true;
     promptFor.current = keyOf(active);
-    if (!book || tooShort) {
+    if (!book || !active || tooShort) {
       discard(); // book was deleted, or under a minute - nothing to recover
       return;
     }
-    const open = (minutes: number) => {
-      setChosenMinutes(minutes);
-      setEditorVisible(true);
-    };
-    const offerUntilNow = untilNowMinutes > estMinutes;
-    Alert.alert(
-      tr('timer.recoverTitle'),
-      `${tr('timer.recoverMsg', { title: book.title, n: estMinutes })}\n\n${tr('timer.recoverHint', { n: estMinutes })}`,
-      [
-        { text: tr('timer.recoverDiscard'), style: 'destructive', onPress: () => stillPrompted() && discard() },
-        ...(offerUntilNow
-          ? [{ text: tr('timer.recoverSaveNow', { n: untilNowMinutes }), onPress: () => stillPrompted() && open(untilNowMinutes) }]
-          : []),
-        { text: tr('timer.recoverSaveTick', { n: estMinutes }), onPress: () => stillPrompted() && open(estMinutes) },
-      ],
-      { cancelable: false }
-    );
+    askOrphanRecovery(tr, book.title, active, {
+      discard: () => stillPrompted() && discard(),
+      pick: (minutes) => {
+        if (!stillPrompted()) return;
+        setChosenMinutes(minutes);
+        setEditorVisible(true);
+      },
+    });
   }, [canPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSaveRecovered = (draft: SessionDraft) => {
@@ -186,6 +229,7 @@ export function ActiveSessionWatcher() {
       startPage: draft.startPage,
       endPage: draft.endPage,
       pagesRead,
+      source: 'timer',
     });
     discard();
   };

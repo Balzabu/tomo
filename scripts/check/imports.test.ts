@@ -7,6 +7,8 @@ import { isOpenreadsBackup, parseOpenreadsBackup, parseOpenreadsCsv, isOpenreads
 import { parseBookmoryEntries, parseBookmoryXlsx, isBookmoryXlsx, quillToText } from '../../src/lib/importBookmory.ts';
 import { splitReads, bytesToBase64, base64ToBytes, utf8Decode } from '../../src/lib/importBundle.ts';
 import { toDateKey } from '../../src/lib/utils.ts';
+import { parseBookCsv } from '../../src/lib/importSources.ts';
+import { sniffDelimiter } from '../../src/lib/csv.ts';
 
 const fx = (f: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', f));
 const labels = { favourites: 'Preferiti', wishlist: 'Lista desideri' };
@@ -86,5 +88,69 @@ const key = (ts?: number) => (ts ? toDateKey(ts) : undefined);
   assert.equal(b.books.find((x) => x.title === 'Il Gattopardo')!.review, 'Bellissimo, da rileggere.');
   assert.equal(b.notes.length, 1); assert.equal(b.notes[0].type, 'quote'); assert.equal(b.notes[0].page, 72);
   assert.equal(b.books.find((x) => x.key === b.notes[0].bookKey)!.title, 'Il piccolo principe');
+}
+
+// Goodreads / StoryGraph CSV re-saved by a European Excel: ";" separated,
+// "," as the decimal mark, ";" inside quoted titles
+{
+  const g = parseBookCsv(fx('goodreads-semicolon.csv').toString('utf8'))!;
+  assert.equal(g.source, 'goodreads');
+  assert.equal(g.books.length, 4);
+  const dune = g.books.find((b) => b.title === 'Dune')!;
+  assert.deepEqual([dune.series, dune.seriesNumber, dune.isbn, dune.rating, dune.pageCount], ['Dune', 1, '9780441013593', 5, 412]);
+  assert.deepEqual(dune.shelfNames, ['classici', 'fantascienza']);
+  assert.equal(dune.status, 'finished');
+  assert.equal(key(dune.finishedAt), '2026-03-14');
+  // Goodreads writes a series with no position as "Title (Series)"
+  const hobbit = g.books.find((b) => b.title === 'The Hobbit')!;
+  assert.deepEqual([hobbit.series, hobbit.seriesNumber], ['Middle-earth Universe', undefined]);
+  // ...but an edition note in parentheses stays in the title
+  const pride = g.books.find((b) => b.title === 'Pride and Prejudice (Penguin Classics Deluxe Edition)')!;
+  assert.equal(pride.series, undefined);
+  const rosa = g.books.find((b) => b.title === 'Il nome della rosa; ovvero, un romanzo')!;
+  assert.equal(rosa.status, 'reading'); assert.equal(rosa.isbn, '9788845292613');
+
+  const s = parseBookCsv(fx('storygraph-semicolon.csv').toString('utf8'))!;
+  assert.equal(s.source, 'storygraph');
+  assert.equal(s.books.length, 2);
+  const sd = s.books.find((b) => b.title === 'Dune')!;
+  assert.deepEqual([sd.series, sd.seriesNumber, sd.rating, sd.pace], ['Dune', 1, 5, 'slow']);
+  assert.deepEqual(sd.moods, ['adventurous', 'tense']); assert.deepEqual(sd.shelfNames, ['sci-fi', 'classics']);
+  assert.equal(key(sd.startedAt), '2026-02-01'); assert.equal(key(sd.finishedAt), '2026-03-14');
+  const sr = s.books.find((b) => b.title === 'Il nome della rosa; ovvero, un romanzo')!;
+  assert.equal(sr.status, 'reading'); assert.equal(key(sr.startedAt), '2026-10-01');
+
+  // the Openreads detection splits the header the same way
+  const header = fx('openreads.csv').toString('utf8').split('\n')[0].replace(/,/g, ';');
+  assert.ok(isOpenreadsCsv(header.split(sniffDelimiter(header))));
+  assert.ok(!isOpenreadsCsv(header.split(',')));
+}
+
+// "Title (Series)" without a number: only in Goodreads's own export (it has
+// "Author l-f"), and only when the parenthesis looks like a series name
+{
+  const gr = (titles: string[], proper = true) =>
+    parseBookCsv(
+      `Book Id,Title,Author${proper ? ',Author l-f' : ''},Exclusive Shelf\n` +
+        titles.map((t, i) => `${i},"${t}",A${proper ? ',"A"' : ''},to-read`).join('\n') + '\n'
+    )!.books.map((b) => [b.title, b.series, b.seriesNumber]);
+  assert.deepEqual(
+    gr(['The Hobbit (Middle-earth Universe)', 'Dune (Dune, #1)', 'Q (novel)', 'Nineteen Eighty-Four (1984)', 'Il nome della rosa (Edizione speciale)', 'Dune (Spanish Edition)', 'Dune (Vol. 2)', 'Foundation (The Foundation Trilogy)']),
+    [
+      ['The Hobbit', 'Middle-earth Universe', undefined],
+      ['Dune', 'Dune', 1],
+      ['Q (novel)', undefined, undefined],
+      ['Nineteen Eighty-Four (1984)', undefined, undefined],
+      ['Il nome della rosa (Edizione speciale)', undefined, undefined],
+      ['Dune (Spanish Edition)', undefined, undefined],
+      ['Dune (Vol. 2)', undefined, undefined],
+      ['Foundation', 'The Foundation Trilogy', undefined],
+    ]
+  );
+  // a Goodreads-style file from another app (no "Author l-f"): only numbered series
+  assert.deepEqual(gr(['The Hobbit (Middle-earth Universe)', 'Dune (Dune, #1)'], false), [
+    ['The Hobbit (Middle-earth Universe)', undefined, undefined],
+    ['Dune', 'Dune', 1],
+  ]);
 }
 console.log('imports: all assertions passed');

@@ -1,8 +1,12 @@
-import { ImportedBook, MOOD_OPTIONS, ReadingPace, ReadingStatus } from '@/types';
-import { parseCsv } from '@/lib/csv';
-import { compactIsbn, normalizeIsbn } from '@/lib/isbn';
-import { splitDateRanges } from '@/lib/reads';
-import { parseLocalDateKey } from '@/lib/utils';
+// Goodreads / StoryGraph CSV → ImportedBook[]. Pure: relative imports with
+// extension (not '@/…'), so the check scripts can round-trip an export under
+// plain node, like csvExport.ts itself.
+import type { ImportedBook, ReadingPace, ReadingStatus } from '../types/index.ts';
+import { MOOD_OPTIONS } from '../types/index.ts';
+import { parseCsv } from './csv.ts';
+import { compactIsbn, normalizeIsbn } from './isbn.ts';
+import { splitDateRanges } from './reads.ts';
+import { parseLocalDateKey } from './utils.ts';
 
 export type ImportSource = 'goodreads' | 'storygraph';
 
@@ -18,7 +22,11 @@ export function parseBookCsv(text: string): ImportResult | null {
   const headers = Object.keys(rows[0]);
 
   if (headers.includes('Exclusive Shelf') || headers.includes('Book Id')) {
-    return { source: 'goodreads', books: rows.map(mapGoodreads).filter(isUsable) };
+    // Goodreads's own export (every one has "Author l-f"; Tomo's and other
+    // apps' Goodreads-style files don't) is the one whose titles carry a
+    // series without a position: see parseSeries.
+    const fromGoodreads = headers.includes('Author l-f');
+    return { source: 'goodreads', books: rows.map((r) => mapGoodreads(r, fromGoodreads)).filter(isUsable) };
   }
   if (headers.includes('Read Status')) {
     return { source: 'storygraph', books: rows.map(mapStoryGraph).filter(isUsable) };
@@ -116,11 +124,41 @@ function normalizePace(v?: string): ReadingPace | undefined {
   return undefined;
 }
 
-/** "Series Name, #2" or "Series Name #2" → { series, number }. */
-function parseSeries(title: string): { title: string; series?: string; seriesNumber?: number } {
+// A trailing parenthesis that is an edition or format note rather than a
+// series: "(Italian Edition)", "(2nd ed.)", "(Unabridged)", "(Vol. 2)"…
+// (Letter classes, not \b: "é" isn't a word character for \b.)
+const NOT_A_SERIES =
+  /(?:^|[^\p{L}])(?:editions?|edizione|edición|édition|ausgabe|ed\.|éd\.|vols?\.|volumes?|translation|translated|paperback|hardcover|audiobook|unabridged|abridged|illustrated|annotated|reprint)(?!\p{L})/iu;
+
+/**
+ * "Title (Series Name, #2)" or "Title (Series Name #2)" → { title, series,
+ * number }.
+ *
+ * With `numberless`, "Title (Series)" is a series too - that is how Goodreads
+ * writes one without a position, and keeping it in the title changed the
+ * title (the title|author match key) on re-import and duplicated the book.
+ * Nothing tells "(Dune)" from a parenthesis that belongs to the title, so
+ * this is only done for Goodreads's own export, where a trailing parenthesis
+ * is a series in all but a few cases, and those few are screened out: it
+ * must start with a capital (a proper name, not "(novel)"), not be a year or
+ * a number, and not be an edition/format note. Tomo's own export never
+ * writes "(Series)" without a number, so a parenthesised title in it stays
+ * whole.
+ */
+function parseSeries(
+  title: string,
+  numberless = false
+): { title: string; series?: string; seriesNumber?: number } {
   const m = title.match(/^(.*?)\s*\(([^()]*?),?\s*#(\d+(?:\.\d+)?)\)\s*$/);
   if (m) {
     return { title: m[1].trim(), series: m[2].trim(), seriesNumber: parseFloat(m[3]) };
+  }
+  const p = numberless ? title.match(/^(.+?)\s*\(([^()#]+)\)\s*$/) : null;
+  if (p) {
+    const series = p[2].trim();
+    if (/^\p{Lu}/u.test(series) && !/^\d+$/.test(series) && !NOT_A_SERIES.test(series)) {
+      return { title: p[1].trim(), series };
+    }
   }
   return { title: title.trim() };
 }
@@ -147,9 +185,15 @@ function goodreadsStatus(shelf: string): ReadingStatus {
   }
 }
 
-function mapGoodreads(r: Record<string, string>): ImportedBook | null {
-  const parsed = parseSeries(r['Title'] ?? '');
+function mapGoodreads(r: Record<string, string>, fromGoodreads: boolean): ImportedBook | null {
+  const parsed = parseSeries(r['Title'] ?? '', fromGoodreads);
   if (!parsed.title) return null;
+  // Tomo's own export carries the series as columns (a series without a
+  // position has no place in the title convention); they win over the title.
+  const seriesCol = (r['Series'] ?? '').trim();
+  const seriesNumCol = parseFloat(r['Series Number'] ?? '');
+  const series = seriesCol || parsed.series;
+  const seriesNumber = Number.isFinite(seriesNumCol) ? seriesNumCol : parsed.seriesNumber;
   const authors = [r['Author'], ...splitList(r['Additional Authors'])]
     .map((a) => a?.trim())
     .filter(Boolean) as string[];
@@ -167,8 +211,8 @@ function mapGoodreads(r: Record<string, string>): ImportedBook | null {
     status,
     rating: rating && rating > 0 ? rating : undefined,
     review,
-    series: parsed.series,
-    seriesNumber: parsed.seriesNumber,
+    series,
+    seriesNumber,
     publishedDate: (r['Original Publication Year'] || r['Year Published'] || '').trim() || undefined,
     addedAt: parseDate(r['Date Added']),
     finishedAt: status === 'finished' ? parseDate(r['Date Read']) : undefined,

@@ -5,6 +5,7 @@ import { useStore } from '@/store/useStore';
 import {
   checkedIsbnAfterLookup,
   fillEmptyPatch,
+  isCoverGuess,
   needsCatalogData,
   pickValues,
   RefreshValues,
@@ -35,6 +36,34 @@ async function coverLoads(url: string): Promise<boolean> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * A book just added by ISBN keeps the guessed cover URL so a cover that
+ * exists shows at once; this checks it afterwards, off the add path, and
+ * clears it when Open Library has none - otherwise the book would show the
+ * placeholder for good, as "Fill in missing details" counts the URL as a
+ * cover. Only a definite "no cover" (404) clears it: a prefetch can't tell
+ * that from a network blink, and losing a real cover would be the worse
+ * mistake. Nothing happens if the user has set another cover meanwhile.
+ */
+export function dropDeadCoverGuess(book: Pick<Book, 'id' | 'coverUrl'>): void {
+  const url = book.coverUrl;
+  if (!url || !isCoverGuess(url)) return;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), COVER_CHECK_MS);
+  void fetch(url, { method: 'HEAD', signal: ctrl.signal })
+    .then((res) => {
+      if (res.status !== 404) return;
+      useStore
+        .getState()
+        .updateBooks([{ id: book.id, patch: { coverUrl: undefined } }], (cur) => cur.coverUrl === url);
+    })
+    .catch(() => {
+      // unreachable or slow: keep the guess, the image loader falls back to
+      // the placeholder anyway
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 /**

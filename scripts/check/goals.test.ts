@@ -57,3 +57,17 @@ const sess = (date: string, pages: number, secs: number): any => ({ id: date + p
   assert.equal(goalProgress({ ...ch, target: 50 }, [], ss, '2026-05-10').state, 'done');
 }
 console.log('goals: all assertions passed');
+
+// A backdated session that finishes the book on Dec 31 counts for that
+// year's goal, not for the January it was logged in.
+import { applyProgress, sessionEnd } from '../../src/lib/reads.ts';
+{
+  const dec31 = at('2025-12-31', 22);
+  const b: any = { ...book('late'), pageCount: 200, currentPage: 150, startedAt: at('2025-12-01') };
+  const s: any = { ...sess('2025-12-31', 50, 3600), bookId: 'late', startPage: 150, endPage: 200, startTime: dec31, endTime: dec31 + 3_600_000 };
+  const done = applyProgress(b, 200, sessionEnd(s));
+  const goal = { id: 'g', metric: 'books', period: 'year', target: 12, createdAt: 0 } as any;
+  assert.equal(goalProgress(goal, [done], [s], '2025-12-31').current, 1);
+  assert.equal(goalProgress(goal, [done], [s], '2026-01-02').current, 0, 'logged in January, read on Dec 31');
+}
+console.log('goals (backdated finish): all assertions passed');

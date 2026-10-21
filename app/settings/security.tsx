@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LOCK_TIMEOUTS, useLock } from '@/store/useLock';
@@ -20,6 +21,7 @@ type Flow =
 export default function SecuritySettings() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const config = useLock((s) => s.config);
   const [flow, setFlow] = useState<Flow>(null);
   const [errorKey, setErrorKey] = useState(0);
@@ -116,7 +118,7 @@ export default function SecuritySettings() {
       : tr('lock.choosePin');
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 40 + insets.bottom }}>
       <View style={styles.hero}>
         <View style={[styles.heroIcon, { backgroundColor: t.colors.cardAlt }]}>
           <Ionicons name={config.enabled ? 'lock-closed' : 'lock-open'} size={30} color={t.colors.primary} />

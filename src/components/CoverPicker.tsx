@@ -7,6 +7,7 @@ import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { BookCover } from '@/components/BookCover';
 import { pickCover } from '@/lib/covers';
+import { devDetail } from '@/lib/utils';
 
 interface Props {
   coverUrl?: string;
@@ -33,7 +34,7 @@ export function CoverPicker({ coverUrl, title, onChange }: Props) {
     } catch (e) {
       // e.g. copying the picked file failed (storage full) - tell the user
       // instead of leaving an unhandled rejection.
-      Alert.alert(tr('common.error'), String(e));
+      Alert.alert(tr('common.error'), devDetail(tr('cover.saveFailed'), e));
     } finally {
       setBusy(false);
     }

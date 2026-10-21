@@ -5,7 +5,7 @@ import { withLockGrace } from '@/store/useLock';
 const CHANNEL_ID = 'reading-reminders';
 const SESSION_CHANNEL_ID = 'reading-session';
 const SESSION_CATEGORY_ID = 'reading-session';
-const FINISH_ACTION_ID = 'FINISH';
+export const FINISH_ACTION_ID = 'FINISH';
 export const QUOTE_ACTION_ID = 'QUOTE';
 
 // Show reminders even when the app is in the foreground. The ongoing session
@@ -34,10 +34,17 @@ async function ensureAndroidChannel(name: string): Promise<void> {
   });
 }
 
-/** Ask for notification permission (Android 13+ needs a channel first). */
-export async function requestNotificationPermission(channelName: string): Promise<boolean> {
+/** Ask for notification permission (Android 13+ needs a channel first).
+ *  `channel` is the one the caller is about to post on: the timer registers
+ *  only the session channel, so a user who never turns reminders on doesn't
+ *  find a "Reminders" entry in the system notification settings. */
+export async function requestNotificationPermission(
+  channel: 'reminders' | 'session',
+  channelName: string
+): Promise<boolean> {
   try {
-    await ensureAndroidChannel(channelName);
+    if (channel === 'session') await ensureSessionChannel(channelName);
+    else await ensureAndroidChannel(channelName);
     const current = await Notifications.getPermissionsAsync();
     if (current.granted) return true;
     const req = await withLockGrace(() => Notifications.requestPermissionsAsync());
@@ -117,7 +124,7 @@ export async function cancelReminders(): Promise<void> {
     const all = await Notifications.getAllScheduledNotificationsAsync();
     await Promise.all(
       all
-        .filter((n) => n.identifier.startsWith(REMINDER_PREFIX) || !n.identifier.startsWith('session-'))
+        .filter((n) => n.identifier.startsWith(REMINDER_PREFIX))
         .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
     );
   } catch {
@@ -176,8 +183,9 @@ export interface SessionNotificationText {
 /**
  * Post the ongoing "reading in progress" notification with a Finish action.
  * All text is passed in already-translated (this module stays i18n-free).
- * `bookId` is carried in the payload so the tap handler can open the finish
- * screen. Returns the notification id so it can be dismissed when done.
+ * `bookId` is carried in the payload so the tap handler can open the timer
+ * (or its finish screen). Returns the notification id so it can be dismissed
+ * when done.
  */
 export async function showSessionNotification(
   text: SessionNotificationText,

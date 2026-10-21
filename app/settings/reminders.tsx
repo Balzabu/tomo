@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '@/components/AppAlert';
 import { useSettings } from '@/store/useSettings';
 import { spacing } from '@/theme/theme';
@@ -13,6 +14,7 @@ import {
 
 export default function RemindersSettings() {
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const reminderEnabled = useSettings((s) => s.reminderEnabled);
   const reminderHour = useSettings((s) => s.reminderHour);
   const reminderMinute = useSettings((s) => s.reminderMinute);
@@ -53,7 +55,7 @@ export default function RemindersSettings() {
   };
   const applyReminderInner = async (enabled: boolean, h: number, m: number) => {
     if (enabled) {
-      const ok = await requestNotificationPermission(tr('notif.channelReminders'));
+      const ok = await requestNotificationPermission('reminders', tr('notif.channelReminders'));
       if (!ok) {
         Alert.alert(tr('settings.reminders'), tr('settings.reminderPermDenied'));
         setReminder(false, h, m);
@@ -78,7 +80,7 @@ export default function RemindersSettings() {
 
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 + insets.bottom, gap: spacing.lg }}>
       <View style={{ gap: spacing.sm }}>
         <SettingsGroup>
           <SettingsSwitchRow
@@ -94,6 +96,10 @@ export default function RemindersSettings() {
           ) : null}
         </SettingsGroup>
         <SettingsFootnote>{tr('settings.reminderDesc')}</SettingsFootnote>
+        {/* Reminders are inexact alarms (Play doesn't grant exact ones to an
+            app like this): under Doze they can land well after the chosen
+            time, which otherwise looks like a bug. */}
+        {reminderEnabled ? <SettingsFootnote>{tr('settings.reminderInexact')}</SettingsFootnote> : null}
       </View>
 
       {reminderEnabled ? (

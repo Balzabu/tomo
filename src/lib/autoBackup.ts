@@ -1,7 +1,7 @@
 import { AppState, InteractionManager } from 'react-native';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { StorageAccessFramework as SAF } from 'expo-file-system/legacy';
+import { StorageAccessFramework as SAF, getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
 import { useStore } from '@/store/useStore';
 import { withLockGrace } from '@/store/useLock';
 import { buildBackupJson } from '@/lib/backup';
@@ -99,6 +99,41 @@ function stamp(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+/** UTF-8 size of the text as written - what a provider that reports sizes
+ *  shows for the file. Non-ASCII is rare in a backup (base64 covers, ids,
+ *  JSON syntax), so count the exceptions instead of walking every character
+ *  of a file of tens of MB. */
+function utf8Length(s: string): number {
+  let n = s.length;
+  const re = /[^\x00-\x7f]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    const c = m[0].charCodeAt(0);
+    // 2-byte sequences add one byte, 3-byte ones two; a surrogate pair is
+    // 4 bytes over 2 units, so each half adds one
+    n += c < 0x800 || (c >= 0xd800 && c <= 0xdfff) ? 1 : 2;
+  }
+  return n;
+}
+
+/** Whether the file holds exactly `json`. The write runs when the app is
+ *  sent to the background - exactly when Android may kill it - and a kill
+ *  between creating the file and the end of the write leaves it empty or cut
+ *  short without anything throwing. Checked by size only: a provider that
+ *  can't report one (some cloud folders say 0, or serve stale content right
+ *  after a write) is trusted rather than read back, since a wrong "mismatch"
+ *  would delete a good backup and reading tens of MB back doubles the
+ *  memory at the moment Android is most likely to kill the app. */
+async function verifyWritten(uri: string, json: string): Promise<boolean> {
+  try {
+    const info = await getInfoAsync(uri);
+    if (info.exists && typeof info.size === 'number' && info.size > 0) return info.size === utf8Length(json);
+  } catch {
+    // can't inspect: the write did succeed
+  }
+  return true;
+}
+
 export type BackupResult = { ok: true; file: string } | { ok: false; error: 'no_folder' | 'no_data' | 'write' | 'busy' };
 
 /** Write a backup into the chosen folder now, then prune old ones. */
@@ -121,14 +156,16 @@ export async function runBackup(): Promise<BackupResult> {
       version: s.version,
     });
     const uri = await SAF.createFileAsync(config.dirUri, `${PREFIX}${stamp()}`, 'application/json');
+    let complete = false;
     try {
       await SAF.writeAsStringAsync(uri, json);
-    } catch (e) {
+      complete = await verifyWritten(uri, json);
+    } finally {
       // Don't leave an empty or partial file behind: it looks like a backup,
       // counts towards "keep", and pruning would delete a good one for it.
-      await SAF.deleteAsync(uri, { idempotent: true }).catch(() => {});
-      throw e;
+      if (!complete) await SAF.deleteAsync(uri, { idempotent: true }).catch(() => {});
     }
+    if (!complete) throw new Error('backup file incomplete after writing');
     const file = fileNameOf(uri);
     useBackup.getState().update({ lastAt: Date.now(), lastFile: file, lastError: undefined });
     await prune(config.dirUri, config.keep, file);
@@ -143,6 +180,59 @@ export async function runBackup(): Promise<BackupResult> {
 
 const AUTO_NAME = /^tomo-backup-\d{4}-\d{2}-\d{2}_\d{6}( \(\d+\))?(\.json)?$/;
 
+/** No backup is this small: it holds at least one book (runBackup refuses
+ *  an empty library) and the collection and cover fields around it. */
+const MIN_BACKUP_BYTES = 64;
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+/** The bytes of a short base64 string, one char per byte (only the ASCII
+ *  ones are looked at). */
+function decodeBase64(b64: string): string {
+  let out = '';
+  let acc = 0;
+  let bits = 0;
+  for (const ch of b64) {
+    const v = B64.indexOf(ch);
+    if (v < 0) continue; // '=' padding, whitespace
+    acc = ((acc << 6) | v) & 0xffff;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out += String.fromCharCode((acc >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+/** A file this feature wrote that holds no backup: left empty or cut short
+ *  by a run killed mid-write (before 1.5.5 nothing checked the write, and
+ *  the stub kept its place among the `keep` newest files). Only what can be
+ *  shown to be a stub counts, so a provider that can't report a size (a
+ *  cloud folder) never loses a good backup to this. */
+async function isStub(uri: string): Promise<boolean> {
+  try {
+    const info = await getInfoAsync(uri);
+    if (!info.exists || info.size >= MIN_BACKUP_BYTES) return false;
+  } catch {
+    return false;
+  }
+  // Some providers' sizes are a guess (0 for a perfectly good file): look at
+  // the first bytes before trusting a small one. A positional read is only
+  // offered as base64; a read that fails outright (the stream ends at once)
+  // is retried whole, which yields '' for an empty file instead of throwing.
+  let head: string;
+  try {
+    head = decodeBase64(await readAsStringAsync(uri, { encoding: 'base64', position: 0, length: MIN_BACKUP_BYTES }));
+  } catch {
+    try {
+      head = (await readAsStringAsync(uri)).slice(0, MIN_BACKUP_BYTES);
+    } catch {
+      return false;
+    }
+  }
+  return head.length < MIN_BACKUP_BYTES || !/^(\xef\xbb\xbf)?\s*\{\s*"/.test(head);
+}
+
 async function prune(dirUri: string, keep: number, justWritten: string): Promise<void> {
   if (!keep) return;
   try {
@@ -154,8 +244,15 @@ async function prune(dirUri: string, keep: number, justWritten: string): Promise
       .filter((f) => AUTO_NAME.test(f.name) && f.name !== justWritten)
       // The name carries the timestamp, so name order is age order.
       .sort((a, b) => b.name.localeCompare(a.name));
+    // A stub must not count as one of `keep`: it would push a good backup
+    // out. It goes regardless of its age.
+    const backups: typeof files = [];
+    for (const f of files) {
+      if (await isStub(f.uri)) await SAF.deleteAsync(f.uri, { idempotent: true }).catch(() => {});
+      else backups.push(f);
+    }
     // The file just written always stays; it counts as one of `keep`.
-    for (const f of files.slice(Math.max(0, keep - 1))) await SAF.deleteAsync(f.uri, { idempotent: true });
+    for (const f of backups.slice(Math.max(0, keep - 1))) await SAF.deleteAsync(f.uri, { idempotent: true });
   } catch {
     // pruning is best-effort; the next backup tries again
   }

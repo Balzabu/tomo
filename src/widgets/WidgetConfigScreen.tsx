@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { initialWindowMetrics } from 'react-native-safe-area-context';
 import type { WidgetConfigurationScreenProps } from 'react-native-android-widget';
 import { Book } from '@/types';
 import { formatInt } from '@/i18n';
@@ -22,6 +23,11 @@ import {
 import { setReadingSelection } from './widget-prefs';
 import { setRecentsHidden } from '../../modules/tomo-system';
 import { currentSize, renderWidgetFor } from './widget-task-handler';
+
+// No SafeAreaProvider in this root: the window metrics the native module
+// measured at startup are enough to keep the last book above the navigation
+// bar (edge-to-edge on Android 15+).
+const bottomInset = initialWindowMetrics?.insets.bottom ?? 0;
 
 /**
  * Configuration screen for the "Currently reading" widget. Launched by Android
@@ -140,7 +146,7 @@ export function WidgetConfigScreen({
           </Pressable>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 10 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 10, paddingBottom: 16 + bottomInset }}>
           {list.map((b) => {
             const pct = progressPct(b);
             const author = b.authors.join(', ') || t('common.unknownAuthor');

@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleProp,
   StyleSheet,
   Text,
   TextStyle,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { Alert } from '@/components/AppAlert';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -15,10 +19,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useBook, useStore } from '@/store/useStore';
 import {
+  ActiveSession,
   useActiveSession,
   sessionElapsed,
   sessionElapsedAtLastTick,
 } from '@/store/useActiveSession';
+import { askOrphanRecovery, orphanEstimates, orphanMinutes } from '@/components/ActiveSessionWatcher';
 import { onColor, radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui';
@@ -39,6 +45,7 @@ const STALE_GAP_MS = 60 * 60_000;
 export default function TimerScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { bookId, finish } = useLocalSearchParams<{ bookId: string; finish?: string }>();
   const book = useBook(bookId);
   const addSession = useStore((s) => s.addSession);
@@ -57,6 +64,15 @@ export default function TimerScreen() {
   const allowLeaveRef = useRef(false); // set when leaving intentionally (save/cancel)
   const initRef = useRef<string | null>(null); // bookId the bootstrap ran for
   const wasRunningRef = useRef(false); // clock state when the finish form opened
+  // The finish form is settling an earlier day's session: once saved, start
+  // the session the user came for instead of leaving.
+  const restartRef = useRef(false);
+  const [bootSeq, setBootSeq] = useState(0); // bumped to run the bootstrap again
+  // A session frozen after a process kill, with time since its last heartbeat
+  // it can't vouch for: which estimate to keep is asked before the finish
+  // form ('finish') or before the clock continues ('resume').
+  const [orphanAsk, setOrphanAsk] = useState<'finish' | 'resume' | null>(null);
+  const orphanAlertRef = useRef(false); // the question is on screen
   const navigation = useNavigation();
 
   // Elapsed is derived from the persisted session (wall-clock based), so it is
@@ -99,6 +115,50 @@ export default function TimerScreen() {
   const [startPage, setStartPage] = useState(String(book?.currentPage ?? 0));
   const [endPage, setEndPage] = useState(String(book?.currentPage ?? 0));
 
+  // Seconds at the last heartbeat and until now (capped) for a session that
+  // lost its heartbeat: frozen after a kill, or left running in the background.
+  const estimates = (a: ActiveSession) =>
+    a.runningSince != null
+      ? { tickSeconds: sessionElapsedAtLastTick(a), untilNowSeconds: Math.min(MAX_SESSION_MINUTES * 60, sessionElapsed(a, Date.now())) }
+      : orphanEstimates(a);
+  // Frozen after a process kill, with enough time since to be worth a question.
+  const hasOrphanGap = (a: ActiveSession) => {
+    if (a.orphanRunningSince == null) return false;
+    const m = orphanMinutes(a);
+    return m.untilNow > m.tick;
+  };
+
+  // An earlier day's session: freeze it at its last heartbeat, ask how much
+  // of the time since was reading (checkStale's question) and open the finish
+  // form on the answer. False when it is under a minute even counting until
+  // now - nothing to settle.
+  const settleOldSession = (a: ActiveSession): boolean => {
+    const { tickSeconds, untilNowSeconds } = estimates(a);
+    if (untilNowSeconds < 60) return false;
+    useActiveSession.getState().pauseAtLastTick();
+    const tick = Math.max(1, Math.round(tickSeconds / 60));
+    const untilNow = Math.max(tick, Math.round(untilNowSeconds / 60));
+    const toFinish = (secs: number) => {
+      useActiveSession.getState().setElapsed(Math.max(60, secs));
+      wasRunningRef.current = false;
+      restartRef.current = true;
+      const page = useStore.getState().books.find((b) => b.id === a.bookId)?.currentPage ?? 0;
+      setStartPage(String(page));
+      setEndPage(String(page));
+      setPhase('finish');
+    };
+    Alert.alert(
+      tr('timer.staleTitle'),
+      tr('timer.staleMsg', { time: formatTimeOfDay(a.lastTick) }),
+      [
+        ...(untilNow > tick ? [{ text: tr('timer.recoverSaveNow', { n: untilNow }), onPress: () => toFinish(untilNowSeconds) }] : []),
+        { text: tr('timer.recoverSaveTick', { n: tick }), onPress: () => toFinish(tickSeconds) },
+      ],
+      { cancelable: false }
+    );
+    return true;
+  };
+
   // Bootstrap the session per book: adopt an existing one for this book, or
   // start a fresh one (and post the ongoing notification). A stale deep link
   // (widget or notification pointing at a deleted book) must not start a ghost
@@ -126,21 +186,32 @@ export default function TimerScreen() {
     }
     const s = useActiveSession.getState();
     let a = s.active;
-    // Yesterday's session for this book (an earlier reading day: left
-    // running, or frozen after the app was killed): keep that reading on its
-    // own day instead of silently continuing it today, and start fresh.
-    if (a && a.bookId === bookId && finish !== '1' && readingDayKey(a.lastTick) !== readingDayKey()) {
-      bankSession(a);
-      s.clear();
-      a = null;
-    }
     if (a && a.bookId === bookId) {
       s.markAdopted();
-      if (finish === '1') {
+      // Yesterday's session for this book (an earlier reading day *and* a real
+      // gap, as checkStale measures it: left running, or frozen after the app
+      // was killed): keep that reading on its own day instead of silently
+      // continuing it today. The user settles it in the finish form first;
+      // the session they came for starts once it's saved.
+      if (finish !== '1' && readingDayKey(a.lastTick) !== readingDayKey() && Date.now() - a.lastTick >= STALE_GAP_MS) {
+        if (settleOldSession(a)) return;
+        s.clear(); // under a minute: nothing to keep
+        a = null;
+      } else if (finish === '1') {
         wasRunningRef.current = a.runningSince != null;
         s.pause(); // freeze for the finish screen
-      } else s.resume(); // continue an existing session
-      return;
+        // Frozen after a process kill: pause() can't tell how far it got, so
+        // the form would show the time up to the last heartbeat. Offer the
+        // same two estimates as the recovery prompt first.
+        if (hasOrphanGap(a)) setOrphanAsk('finish');
+        return;
+      } else {
+        // Same for the clock continuing (opened again, or "Quote" on the
+        // notification): resuming would silently drop the gap.
+        if (hasOrphanGap(a)) setOrphanAsk('resume');
+        else s.resume(); // continue an existing session
+        return;
+      }
     }
     // "Finish" (a notification) for a session that no longer exists: nothing
     // to finish - never start a new one behind the finish form.
@@ -159,7 +230,9 @@ export default function TimerScreen() {
     }
     s.start(bookId);
     void (async () => {
-      const granted = await requestNotificationPermission(tr('notif.channelReminders'));
+      // Only the session channel is created here: a timer-only user never
+      // sees a "Reminders" channel in the system settings.
+      const granted = await requestNotificationPermission('session', tr('notif.channelSession'));
       if (!granted) return;
       const startedAt = useActiveSession.getState().active?.startedAt ?? Date.now();
       const id = await postSessionNotification(tr, bookId, book.title, startedAt);
@@ -173,14 +246,62 @@ export default function TimerScreen() {
       }
       useActiveSession.getState().setNotificationId(id);
     })();
-  }, [bookId, finish, book, tr, sessionHydrated, lockedNow]);
+  }, [bookId, finish, book, tr, sessionHydrated, lockedNow, bootSeq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The orphan question, once the quote editor (if one was requested along
+  // with it) is out of the way. The session stays frozen until the answer.
+  useEffect(() => {
+    if (!orphanAsk || orphanAlertRef.current || capture !== null || lockedNow || !book) return;
+    const a = useActiveSession.getState().active;
+    if (!a || a.bookId !== bookId || a.runningSince != null) {
+      setOrphanAsk(null);
+      return;
+    }
+    orphanAlertRef.current = true;
+    const done = () => {
+      orphanAlertRef.current = false;
+      setOrphanAsk(null);
+    };
+    if (orphanAsk === 'finish') {
+      askOrphanRecovery(tr, book.title, a, {
+        discard: () => {
+          done();
+          discard();
+          leave();
+        },
+        pick: (_minutes, seconds) => {
+          useActiveSession.getState().setElapsed(seconds);
+          done();
+        },
+      });
+      return;
+    }
+    const { untilNowSeconds } = orphanEstimates(a);
+    const { tick, untilNow } = orphanMinutes(a);
+    const go = (secs?: number) => {
+      const s = useActiveSession.getState();
+      if (secs != null) s.setElapsed(secs);
+      s.resume();
+      done();
+    };
+    Alert.alert(
+      tr('timer.staleTitle'),
+      tr('timer.staleMsg', { time: formatTimeOfDay(a.lastTick) }),
+      [
+        { text: tr('timer.recoverSaveNow', { n: untilNow }), onPress: () => go(untilNowSeconds) },
+        { text: tr('timer.recoverCountTick', { n: tick }), onPress: () => go() },
+      ],
+      { cancelable: false }
+    );
+  }, [orphanAsk, capture, lockedNow, book, bookId, tr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A "Finish" tap on the notification while the timer is already mounted: jump
   // to the finish screen instead of stacking a second timer. Waits while a
-  // quote is being typed (switching would throw the text away).
+  // quote is being typed (switching would throw the text away), and while the
+  // orphan question is up (its answer decides the time the form shows).
   useEffect(() => {
     // Nothing changes behind the lock screen: handled once unlocked.
-    if (!finishRequested || capture !== null || lockedNow) return;
+    if (!finishRequested || capture !== null || lockedNow || orphanAsk) return;
     const s = useActiveSession.getState();
     // Already on the finish form (typed pages, "was running" state): keep it.
     if (phaseRef.current === 'finish') {
@@ -192,7 +313,7 @@ export default function TimerScreen() {
     s.clearFinishRequest();
     setEndPage(String(Math.max(book?.currentPage ?? 0, Number(startPage) || 0)));
     setPhase('finish');
-  }, [finishRequested, capture, lockedNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [finishRequested, capture, lockedNow, orphanAsk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "Add quote" tapped on the ongoing notification - opened only once the
   // lock screen (if any) is gone, never on top of it.
@@ -236,8 +357,7 @@ export default function TimerScreen() {
       if (AppState.currentState === 'active') s.tick();
       return;
     }
-    const tickSecs = sessionElapsedAtLastTick(a);
-    const nowSecs = Math.min(MAX_SESSION_MINUTES * 60, sessionElapsed(a, Date.now()));
+    const { tickSeconds: tickSecs, untilNowSeconds: nowSecs } = estimates(a);
     s.pauseAtLastTick();
     const toFinish = (secs: number) => {
       useActiveSession.getState().setElapsed(secs);
@@ -358,6 +478,7 @@ export default function TimerScreen() {
       startPage: validStart,
       endPage: validEnd,
       pagesRead,
+      source: 'timer',
     });
     discard();
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -372,6 +493,19 @@ export default function TimerScreen() {
         actionLabel: tr('memory.create'),
         onAction: () => router.push(`/book/${book.id}?memory=1`),
       });
+    }
+    // Yesterday's session settled on the way in: now start the one the user
+    // came for (the bootstrap runs again, clock and notification included).
+    if (restartRef.current && !nowFinished) {
+      restartRef.current = false;
+      savingRef.current = false;
+      const page = useStore.getState().books.find((b) => b.id === book.id)?.currentPage ?? 0;
+      setStartPage(String(page));
+      setEndPage(String(page));
+      setPhase('timing');
+      initRef.current = null;
+      setBootSeq((n) => n + 1);
+      return;
     }
     leave();
   };
@@ -392,50 +526,63 @@ export default function TimerScreen() {
 
   if (phase === 'finish') {
     const pageErr = pagesError(parsePageField(startPage), parsePageField(endPage), book.pageCount);
+    // A scroll view, not a plain centred column: with the keyboard up the
+    // page fields and the Save button must stay reachable, and the last row
+    // must clear the navigation bar (edge-to-edge).
     return (
-      <View style={[styles.wrap, { backgroundColor: t.colors.bg }]}>
-        <View style={styles.finishHead}>
-          <Ionicons name="checkmark-circle" size={48} color={t.colors.success} />
-          <ElapsedClock style={[styles.bigTime, { color: t.colors.text }]} />
-          <Text style={[styles.sub, { color: t.colors.textMuted }]}>{tr('timer.ofReading')}</Text>
-        </View>
-
-        <View style={styles.pageInputs}>
-          <PageField label={tr('timer.fromPage')} value={startPage} onChange={setStartPage} t={t} />
-          <View style={styles.arrowSlot}>
-            <View style={[styles.arrow, { backgroundColor: t.colors.cardAlt }]}>
-              <Ionicons name="arrow-forward" size={18} color={t.colors.textMuted} />
-            </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: t.colors.bg }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.finishWrap, { paddingBottom: spacing.xl + insets.bottom }]}
+        >
+          <View style={styles.finishHead}>
+            <Ionicons name="checkmark-circle" size={48} color={t.colors.success} />
+            <ElapsedClock style={[styles.bigTime, { color: t.colors.text }]} />
+            <Text style={[styles.sub, { color: t.colors.textMuted }]}>{tr('timer.ofReading')}</Text>
           </View>
-          <PageField label={tr('timer.toPage')} value={endPage} onChange={setEndPage} t={t} />
-        </View>
-        {pageErr ? (
-          <Text style={[styles.totalPages, { color: t.colors.danger, fontWeight: '600' }]}>
-            {pageErr === 'order'
-              ? tr('session.pageOrder')
-              : tr('session.pageRange', { n: book.pageCount ?? 0 })}
-          </Text>
-        ) : book.pageCount ? (
-          <Text style={[styles.totalPages, { color: t.colors.textFaint }]}>
-            {tr('timer.ofPages', { n: book.pageCount })}
-          </Text>
-        ) : null}
 
-        <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
-          <Button label={tr('timer.saveSession')} icon="save" full disabled={!!pageErr} onPress={save} />
-          <Button
-            label={tr('common.back')}
-            variant="ghost"
-            full
-            onPress={() => {
-              // goToFinish paused the clock; going back means "keep reading" -
-              // unless the user had paused it themselves before tapping Finish.
-              if (wasRunningRef.current) useActiveSession.getState().resume();
-              setPhase('timing');
-            }}
-          />
-        </View>
-      </View>
+          <View style={styles.pageInputs}>
+            <PageField label={tr('timer.fromPage')} value={startPage} onChange={setStartPage} t={t} />
+            <View style={styles.arrowSlot}>
+              <View style={[styles.arrow, { backgroundColor: t.colors.cardAlt }]}>
+                <Ionicons name="arrow-forward" size={18} color={t.colors.textMuted} />
+              </View>
+            </View>
+            <PageField label={tr('timer.toPage')} value={endPage} onChange={setEndPage} t={t} />
+          </View>
+          {pageErr ? (
+            <Text style={[styles.totalPages, { color: t.colors.danger, fontWeight: '600' }]}>
+              {pageErr === 'order'
+                ? tr('session.pageOrder')
+                : tr('session.pageRange', { n: book.pageCount ?? 0 })}
+            </Text>
+          ) : book.pageCount ? (
+            <Text style={[styles.totalPages, { color: t.colors.textFaint }]}>
+              {tr('timer.ofPages', { n: book.pageCount })}
+            </Text>
+          ) : null}
+
+          <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
+            <Button label={tr('timer.saveSession')} icon="save" full disabled={!!pageErr} onPress={save} />
+            <Button
+              label={tr('common.back')}
+              variant="ghost"
+              full
+              onPress={() => {
+                // goToFinish paused the clock; going back means "keep reading" -
+                // unless the user had paused it themselves before tapping Finish.
+                if (wasRunningRef.current) useActiveSession.getState().resume();
+                // Going on with yesterday's session is their call: no restart.
+                restartRef.current = false;
+                setPhase('timing');
+              }}
+            />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -453,7 +600,10 @@ export default function TimerScreen() {
       <Pressable
         onPress={toggle}
         accessibilityRole="button"
-        accessibilityLabel={running ? tr('timer.paused') : tr('timer.reading')}
+        // The label names the action, not the state (the state is read out
+        // from `busy` and from the text under the button).
+        accessibilityLabel={running ? tr('timer.pauseA11y') : tr('timer.resumeA11y')}
+        accessibilityState={{ busy: running }}
         style={[styles.playBtn, { backgroundColor: t.colors.primary }]}
       >
         <Ionicons name={running ? 'pause' : 'play'} size={42} color={onColor(t.colors.primary)} />
@@ -516,6 +666,7 @@ function PageField({
         onChangeText={onChange}
         keyboardType="numeric"
         selectTextOnFocus
+        accessibilityLabel={label}
         style={[
           styles.pageInput,
           { backgroundColor: t.colors.card, borderColor: t.colors.border, color: t.colors.text },
@@ -548,6 +699,7 @@ function ElapsedClock({ style }: { style: StyleProp<TextStyle> }) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, padding: spacing.xl, alignItems: 'center', justifyContent: 'center' },
+  finishWrap: { flexGrow: 1, padding: spacing.xl, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   bookHead: { alignItems: 'center', gap: spacing.md, marginBottom: spacing.xl },
   bookTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center', maxWidth: 260 },

@@ -1,7 +1,7 @@
 import { Book, ReadingSession } from '@/types';
 import { toDateKey, dateKeyToDate } from '@/lib/utils';
 import { readingDayKey, sessionDay } from '@/lib/readingDay';
-import { booksFinishedInYear, countFinishesInYear, finishesOf } from '@/lib/reads';
+import { booksFinishedInYear, countFinishesInYear, finishYear, finishesOf } from '@/lib/reads';
 
 export interface OverallStats {
   totalBooks: number;
@@ -318,7 +318,7 @@ export function availableWrappedYears(books: Book[], sessions: ReadingSession[])
   }
   for (const b of books) {
     for (const r of finishesOf(b)) {
-      const y = new Date(r.finishedAt).getFullYear();
+      const y = finishYear(r.finishedAt);
       if (y > 1900 && y < earliest) earliest = y;
     }
   }

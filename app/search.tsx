@@ -8,11 +8,13 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from '@/components/ThemedTextInput';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { findPageCount, isbnFromQuery, lookupByIsbn, searchBooks } from '@/services/bookApi';
+import { dropDeadCoverGuess } from '@/services/catalogRefresh';
 import { BookSearchResult, ReadingStatus, STATUS_ORDER } from '@/types';
 import { radius, spacing, useTheme } from '@/theme/theme';
 import { useTranslation } from '@/i18n';
@@ -25,6 +27,7 @@ import { useSnackbar } from '@/store/useSnackbar';
 export default function SearchScreen() {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BookSearchResult[]>([]);
@@ -117,7 +120,7 @@ export default function SearchScreen() {
         keyExtractor={(item, i) =>
           item.isbn ? `${item.isbn}-${i}` : `${item.title}-${item.authors[0] ?? ''}-${i}`
         }
-        contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, gap: spacing.sm }}
+        contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, gap: spacing.sm, paddingBottom: spacing.lg + insets.bottom }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <Pressable
@@ -189,6 +192,8 @@ function StatusPicker({
   // the background - unless the user has typed one in by then.
   const addBook = (result: BookSearchResult, status: ReadingStatus) => {
     const book = addBookToStore(result, status);
+    // Same for a guessed cover URL: kept for now, dropped if it 404s.
+    dropDeadCoverGuess(book);
     if (book.pageCount || !book.isbn) return;
     void findPageCount(book.isbn).then((pageCount) => {
       if (!pageCount) return;
