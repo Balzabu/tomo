@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore';
 import { spacing, useTheme } from '@/theme/theme';
 import { useTranslation, localizedWeekdaysShort, durationUnits, formatInt, numUnitSep } from '@/i18n';
 import { buildHeatmap, computeInsights, computeStats, dailyTotals, latestWrappedYear, recentDailyPages } from '@/lib/stats';
-import { BarChart, Heatmap, StatTile } from '@/components/charts';
+import { BarChart, Heatmap, StatTile, heatWeeksFor } from '@/components/charts';
 import { Button, Card, EmptyState, SectionTitle } from '@/components/ui';
 import { dateKeyToDate, formatDuration } from '@/lib/utils';
 import { useDayStartHour, useTodayKey } from '@/lib/useTodayKey';
@@ -38,7 +38,10 @@ export default function StatsScreen() {
   const insights = useMemo(() => computeInsights(books, sessions), [books, sessions, todayKey, dayStartHour]);
   // Per-day totals don't depend on "today": one pass, shared by both charts.
   const daily = useMemo(() => dailyTotals(sessions), [sessions, dayStartHour]);
-  const heat = useMemo(() => buildHeatmap(daily, 17), [daily, todayKey]);
+  // As many weeks as fit the card's width (17 on phones).
+  const [heatWidth, setHeatWidth] = useState(0);
+  const heatWeeks = heatWeeksFor(heatWidth);
+  const heat = useMemo(() => buildHeatmap(daily, heatWeeks), [daily, todayKey, heatWeeks]);
   const monthDelta = insights.pagesThisMonth - insights.pagesLastMonth;
   const monthTrend = monthDelta > 0 ? ` ↑${formatInt(monthDelta, lang)}` : monthDelta < 0 ? ` ↓${formatInt(-monthDelta, lang)}` : '';
   const wrappedReady = useMemo(
@@ -119,7 +122,9 @@ export default function StatsScreen() {
 
       <Card style={{ gap: spacing.md }}>
         <SectionTitle>{tr('stats.calendar')}</SectionTitle>
-        <Heatmap cells={heat.cells} cols={heat.cols} />
+        <View onLayout={(e) => setHeatWidth(e.nativeEvent.layout.width)}>
+          <Heatmap cells={heat.cells} cols={heat.cols} />
+        </View>
         <View style={styles.legend}>
           <Text style={[styles.legendTxt, { color: t.colors.textFaint }]}>{tr('stats.less')}</Text>
           {[0, 1, 2, 3, 4].map((l) => (

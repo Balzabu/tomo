@@ -3,7 +3,7 @@
     "name": "Tomo",
     "slug": "tomo",
     "version": "1.5.3",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "tomo",
     "userInterfaceStyle": "automatic",
@@ -71,6 +71,7 @@
       "./plugins/withAndroidLintFix",
       "./plugins/withShareTarget",
       "./plugins/withPrivacyHardening",
+      "./plugins/withLargeScreens",
       "./plugins/withWidgetLabels",
       [
         "./plugins/withWidgetProviderExtras",
@@ -176,7 +177,10 @@
           "android": {
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
-            "buildToolsVersion": "36.0.0"
+            "buildToolsVersion": "36.0.0",
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# expo-notifications ships these rules but doesn't apply them to apps: without them R8 breaks scheduling (NotSerializableException).\n-keep class expo.modules.notifications.** { *; }\n-keepclassmembers class * implements java.io.Serializable {\n  static final long serialVersionUID;\n  private static final java.io.ObjectStreamField[] serialPersistentFields;\n  private void writeObject(java.io.ObjectOutputStream);\n  private void readObject(java.io.ObjectInputStream);\n  java.lang.Object writeReplace();\n  java.lang.Object readResolve();\n}"
           }
         }
       ],

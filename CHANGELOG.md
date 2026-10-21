@@ -2,6 +2,23 @@
 
 User-facing changes per release. The section for a version is also the text of its GitHub Release (see [RELEASING.md](./RELEASING.md)). Releases up to 1.3.4 have their notes on the [Releases](https://github.com/Balzabu/tomo/releases) page only.
 
+## 1.5.4 (unreleased)
+
+### Tablets and foldables
+
+- Tomo rotates on tablets and unfolded foldables, and stays on the screen you're on when you turn the device. Phones stay in portrait as before.
+- Statistics → **Reading calendar** fills a wide screen with more weeks, up to a whole year, instead of stretching 17 weeks into oversized squares.
+
+### Fixes
+
+- Exporting a backup or your library no longer offers Tomo itself in the share menu. Picking it left the export spinning, and no other export or image could be shared until Tomo was restarted.
+
+### Under the hood
+
+- A smaller, optimised app: the code is shrunk and optimised at build time, as Google Play now asks.
+
+Install the APK below (Android 7.0+). It installs over v1.5.3.
+
 ## 1.5.3 (2026-10-09)
 
 ### Fixes

@@ -6,6 +6,13 @@ import { useTranslation, localizedWeekdayInitials } from '@/i18n';
 
 const HEAT_GAP = 3;
 const HEAT_LABEL_W = 18;
+const HEAT_MAX_CELL = 20;
+
+/** Weeks to show in `width` so cells stay at most HEAT_MAX_CELL: tablets get more history, not giant cells. */
+export function heatWeeksFor(width: number, min = 17, max = 53): number {
+  const fit = Math.ceil((width - HEAT_LABEL_W) / (HEAT_MAX_CELL + HEAT_GAP));
+  return Math.max(min, Math.min(max, fit));
+}
 
 export function Heatmap({ cells, cols }: { cells: HeatCell[]; cols: number }) {
   const t = useTheme();

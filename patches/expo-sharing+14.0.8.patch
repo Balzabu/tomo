@@ -1,0 +1,34 @@
+diff --git a/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt b/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
+index 8ad453f..18db3a2 100644
+--- a/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
++++ b/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
+@@ -1,5 +1,6 @@
+ package expo.modules.sharing
+ 
++import android.content.ComponentName
+ import android.content.Context
+ import android.content.Intent
+ import android.content.pm.PackageManager
+@@ -36,10 +37,18 @@ class SharingModule : Module() {
+         val mimeType = params.mimeType
+           ?: URLConnection.guessContentTypeFromName(fileToShare.name)
+           ?: "*/*"
+-        val intent = Intent.createChooser(
+-          createSharingIntent(contentUri, mimeType),
+-          params.dialogTitle
+-        )
++        val sendIntent = createSharingIntent(contentUri, mimeType)
++        val intent = Intent.createChooser(sendIntent, params.dialogTitle)
++        // tomo: never offer the app itself as a target. Picking it delivers
++        // the share to the running activity, the chooser's result never comes
++        // back, and the pending promise blocks every later share.
++        val ownTargets = context.packageManager
++          .queryIntentActivities(sendIntent, PackageManager.MATCH_DEFAULT_ONLY)
++          .filter { it.activityInfo.packageName == context.packageName }
++          .map { ComponentName(it.activityInfo.packageName, it.activityInfo.name) }
++        if (ownTargets.isNotEmpty()) {
++          intent.putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, ownTargets.toTypedArray())
++        }
+         val resInfoList = context.packageManager.queryIntentActivities(
+           intent,
+           PackageManager.MATCH_DEFAULT_ONLY

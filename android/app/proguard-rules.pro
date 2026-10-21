@@ -12,3 +12,16 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# @generated begin expo-build-properties - expo prebuild (DO NOT MODIFY)
+# expo-notifications ships these rules but doesn't apply them to apps: without them R8 breaks scheduling (NotSerializableException).
+-keep class expo.modules.notifications.** { *; }
+-keepclassmembers class * implements java.io.Serializable {
+  static final long serialVersionUID;
+  private static final java.io.ObjectStreamField[] serialPersistentFields;
+  private void writeObject(java.io.ObjectOutputStream);
+  private void readObject(java.io.ObjectInputStream);
+  java.lang.Object writeReplace();
+  java.lang.Object readResolve();
+}
+# @generated end expo-build-properties

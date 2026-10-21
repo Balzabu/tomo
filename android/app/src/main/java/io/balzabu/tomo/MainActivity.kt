@@ -2,6 +2,8 @@ package io.balzabu.tomo
 
 import android.os.Build
 import android.os.Bundle
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -24,6 +26,24 @@ class MainActivity : ReactActivity() {
         .setComponent(intent.component)
     }
     super.onCreate(null)
+    applyOrientationPolicy()
+  }
+
+  // tomo: portrait on phones only; tablets and unfolded foldables rotate freely.
+  private fun applyOrientationPolicy() {
+    val smallestDp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      val bounds = windowManager.maximumWindowMetrics.bounds
+      minOf(bounds.width(), bounds.height()) / resources.displayMetrics.density
+    } else {
+      resources.configuration.smallestScreenWidthDp.toFloat()
+    }
+    requestedOrientation = if (smallestDp < 600f) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+      else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    applyOrientationPolicy()
   }
 
   /**

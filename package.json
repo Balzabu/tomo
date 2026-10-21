@@ -65,7 +65,8 @@
     "autolinking": {
       "android": {
         "buildFromSource": [
-          "expo-notifications"
+          "expo-notifications",
+          "expo-sharing"
         ]
       }
     }
